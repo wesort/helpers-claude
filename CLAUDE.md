@@ -7,7 +7,7 @@ files — no build tools, no runtime dependencies.
 
 ## Repo Structure
 
-- `commands/` — Slash command markdown files
+- `.claude/commands/` — Slash command markdown files
 - `README.md` — Purpose, structure, how the loose coupling works
 - `CLAUDE.md` — This file; conventions for working in this repo
 

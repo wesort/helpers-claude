@@ -1,5 +1,7 @@
 # helpers-claude
 
+By Ben Edmonds, [wesort.co.uk](https://wesort.co.uk)
+
 Canonical source of reusable Claude Code slash commands.
 
 Projects keep their own copies of commands — this repo is the
@@ -20,7 +22,7 @@ if the project has local changes worth pushing upstream.
 ## Repo Structure
 
 ```
-commands/       Slash command markdown files
+.claude/commands/  Slash command markdown files
 README.md       This file
 CLAUDE.md       Conventions for working in this repo
 ```
