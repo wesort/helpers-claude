@@ -135,9 +135,9 @@ Use these ASCII markers instead of emoji in headings:
 ```
   --- [+] Remote Only -- candidates to adopt -----------
 
-  | Command | Description | Modified | Last Commit |
-  |---------|-------------|----------|-------------|
-  | `name`  | frontmatter | 30 Jan 2026 14:35 | msg |
+  | Command | Description | Local Modified | Remote Modified | Last Commit |
+  |---------|-------------|----------------|-----------------|-------------|
+  | `name`  | frontmatter |                | 30 Jan 2026 14:35 | msg |
 
   --- [!] Diverged -- review recommended ---------------
 
@@ -147,24 +147,29 @@ Use these ASCII markers instead of emoji in headings:
 
   --- [~] Local Only -- unique to this project ---------
 
-  | Command | Description | Modified |
-  |---------|-------------|----------|
-  | `name`  | frontmatter | 30 Jan 2026 14:35 |
+  | Command | Description | Local Modified | Remote Modified |
+  |---------|-------------|----------------|-----------------|
+  | `name`  | frontmatter | 30 Jan 2026 14:35 |                 |
 
   --- [=] Identical -- no action needed ----------------
 
-  | Command | Description | Modified |
-  |---------|-------------|----------|
-  | `name`  | frontmatter | 30 Jan 2026 14:35 |
+  | Command | Description | Local Modified | Remote Modified |
+  |---------|-------------|----------------|-----------------|
+  | `name`  | frontmatter | 30 Jan 2026 14:35 | 02 Feb 2026 09:12 |
 ```
 
 The `---` section dividers are plain text, not markdown horizontal
 rules. Output them literally with the dashes and label.
 
-**Date sources:**
-- Remote Only, Identical: use the **remote** git date
-- Local Only: use the **local** git date
-- Diverged: show both (Local Modified and Remote Modified columns)
+**Date columns:**
+All sections use **Local Modified** and **Remote Modified** columns.
+Both use `git log -1` author dates from their respective repos.
+Filesystem mtime is not used because git does not preserve it —
+any checkout, pull, or clone resets mtime to the current time.
+Leave a cell blank when the file does not exist on that side
+(Remote Only → no local date; Local Only → no remote date).
+For Identical files, both dates are shown so the user can see
+whether the local copy is older or newer than the remote.
 
 Omit any section that has zero entries. Omit counts of zero from
 the banner.

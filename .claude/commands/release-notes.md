@@ -49,8 +49,10 @@ Append the entry to `RELEASE_NOTES.md` (create the file if it doesn't exist). Us
 Run:
 ```
 git add RELEASE_NOTES.md && git commit -m "Release vX.Y.Z"
-git tag vX.Y.Z
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
 ```
+
+**Important:** Always create an **annotated** tag (`-a`), not a lightweight one. `push.followTags` only follows annotated tags — lightweight tags require an explicit push and are easy to forget.
 
 ### 7. Push
 
