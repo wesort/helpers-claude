@@ -5,3 +5,8 @@
 - **Release notes command** Generates user-facing release notes from git history, commits, and tags
 - **Portable by design** All commands are framework- and language-agnostic markdown files
 - **Loose coupling** Projects keep their own copies; nothing auto-syncs
+
+## What's new in v0.1.1 — 20 Feb 2026
+- **Sync-check command** Added `/sync-check` to compare local commands against a remote repo and report differences
+- **Commands moved** Relocated commands to `.claude/commands/` so Claude Code auto-discovers them as slash commands
+- **Renamed release-notes** Changed `release-note.md` to `release-notes.md` to match remote naming convention
