@@ -10,3 +10,7 @@
 - **Sync-check command** Added `/sync-check` to compare local commands against a remote repo and report differences
 - **Commands moved** Relocated commands to `.claude/commands/` so Claude Code auto-discovers them as slash commands
 - **Renamed release-notes** Changed `release-note.md` to `release-notes.md` to match remote naming convention
+
+## What's new in v0.1.2 — 20 Feb 2026
+- **Clearer sync dates** Sync-check report now shows separate *Local Modified* and *Remote Modified* columns instead of one ambiguous *Modified* column
+- **Annotated tags** Release notes command now creates annotated tags (`git tag -a`) so `push.followTags` works reliably
