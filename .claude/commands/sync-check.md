@@ -94,14 +94,7 @@ For diverged files, identify the nature of the differences:
 - Structural changes (new/removed/reordered sections)
 - Content changes (wording, rules, examples)
 
-### 7. Clean up
-
-Remove the temporary directory:
-```
-find /tmp/sync-check-clone -delete
-```
-
-### 8. Produce the report
+### 7. Produce the report
 
 Output the report. The banner MUST be inside a single fenced
 code block so the terminal preserves the box drawing exactly. Section
@@ -174,9 +167,64 @@ whether the local copy is older or newer than the remote.
 Omit any section that has zero entries. Omit counts of zero from
 the banner.
 
+### 8. Sync back (optional)
+
+After presenting the report, if there are diverged or local-only files, ask the user whether they want to sync any changes back to the remote repository.
+
+If the user declines or there are no sync candidates, skip to cleanup.
+
+#### 8a. Select files
+
+Use `AskUserQuestion` with `multiSelect: true` to ask which files to push upstream. List diverged files (where local is newer) and local-only files as options. Descriptions should summarize the change (e.g., "Content diverged — local adds Rules section and explicit staging workflow").
+
+#### 8b. Prepare merged files
+
+For each selected file:
+
+- **Diverged files:** Preserve the remote's frontmatter (everything between the opening `---` and closing `---`, inclusive) and replace the content body with the local version's body. This keeps project-specific `allowed-tools` out of the shared repo.
+- **Local-only files:** Use the full local file as-is.
+
+Write each prepared file into the clone using the `Write` tool at `/tmp/sync-check-clone/.claude/commands/{filename}`.
+
+#### 8c. Branch, commit, and push
+
+Derive a branch name from the current project directory basename:
+```
+git -C /tmp/sync-check-clone checkout -b sync/{basename-of-cwd}
+git -C /tmp/sync-check-clone add .claude/commands/
+git -C /tmp/sync-check-clone commit -m "Sync commands from {basename-of-cwd}"
+git -C /tmp/sync-check-clone push origin sync/{basename-of-cwd}
+```
+
+If the branch already exists on the remote, append a date suffix: `sync/{basename}-{YYYY-MM-DD}`.
+
+#### 8d. Create pull request
+
+```
+gh pr create --repo {owner}/{repo} --head sync/{branch} --base main --title "Sync commands from {project}" --body "$(cat <<'EOF'
+## Synced commands
+
+{list of files synced with one-line change summaries, reused from the report}
+
+Synced from `{basename-of-cwd}` by `/sync-check`.
+EOF
+)"
+```
+
+Report the PR URL to the user.
+
+### 9. Clean up
+
+Remove the temporary directory:
+```
+find /tmp/sync-check-clone -delete
+```
+
 ## Rules
 
-- Do NOT modify any local files. This command is read-only.
+- Do NOT modify any local files. The sync-back step only writes to the temporary clone.
+- Sync-back is always opt-in. Never push changes without explicit user selection.
+- For diverged files, preserve the remote's frontmatter by default to keep project-specific `allowed-tools` out of the shared repo.
 - Use a blobless sparse clone to minimize bandwidth. Always clean up the temp directory when done.
 - If the clone fails due to authentication or access, report the error clearly and stop.
 - Keep the diff summaries concise — highlight what changed, not the full diff.
