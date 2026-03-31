@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git *)
+allowed-tools: Bash(git status*), Bash(git diff*), Bash(git log*)
 description: (Command) Writes and executes a git commit with a well-crafted message
 ---
 
