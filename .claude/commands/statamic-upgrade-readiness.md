@@ -58,7 +58,9 @@ If you're sitting above several site directories rather than inside one, enumera
 - List all installed versions (`ls /etc/php/`), not just the active one. **This is the cheapest good news in the audit:** if 8.3+ is already installed alongside the active version, the PHP move is a pool switch and a test, not a project.
 - **State plainly: is it 8.3+ (the target floor)? Is it 8.5 (the aim)?** This is the single most decisive fact in the audit. Report support status and target-readiness separately — they diverge (PHP 8.2 is `🟡 security-only` and still blocks the target).
 - If PHP needs to move, check what supplies it: distro packages or the ondrej/php repo. **Verified 22 July 2026:** ondrej publishes co-installable PHP branches for Ubuntu LTS releases in standard support (22.04, 24.04, 26.04) and explicitly *not* for ESM releases. Distro defaults are 8.1 on 22.04, 8.3 on 24.04, 8.5 on 26.04 — so on 22.04 and 24.04 the target PHP comes from ondrej, not from apt's default.
-- **Say plainly how hard the PHP move actually is**, because it's usually much less than it looks: versions are co-installable, so the new PHP goes on beside the old one rather than replacing it, and FPM pools are per site — you can move one site to 8.5 and leave its neighbours on the box untouched, then roll back by pointing the pool at the old version. Note if this box hosts other sites, since that's the thing that makes an in-place move feel risky and this is the answer to it.
+- **Say plainly how hard the PHP move actually is**, because it's usually much less than it looks: versions are co-installable, so the new PHP goes on beside the old one rather than replacing it, and FPM pools *can* be per site — you can move one site to 8.5 and leave its neighbours on the box untouched, then roll back by pointing the pool at the old version. **But check first whether they are:** on a default Forge box every site shares the single `www` pool (`ls /etc/php/*/fpm/pool.d/`), so moving one site independently means splitting the pool first — a server change with its own rollback story. Note if this box hosts other sites, since that's the thing that makes an in-place move feel risky and this is the answer to it.
+- **PHP 8.5 is the aim, not a requirement.** Laravel 13 needs only `^8.3`. A site already on 8.3/8.4 can reach the target with **no server change at all** — peascod did (8.4, 8.5 deferred). Say so when it applies: it keeps root access and rollback out of the upgrade.
+- **OPcache timestamps.** `grep -h validate_timestamps /etc/php/*/fpm/php.ini /etc/php/*/fpm/conf.d/* 2>/dev/null`. If `0` on FPM (while CLI is `On`), FPM serves stale bytecode after any in-place code change, and **CLI checks give false positives**. Record it — it decides how the upgrade must be verified (reload PHP, then test over HTTP) and makes any in-place `refresh.sh` actively dangerous.
 
 ### Composer + packages
 
@@ -69,15 +71,20 @@ If you're sitting above several site directories rather than inside one, enumera
 - **The PHP ceiling hiding in the lockfile.** Locked packages carry their own `php` platform constraints, and an old one with an upper bound (`<8.4`, `<8.5`) will refuse to install on the target PHP even though nothing in composer.json says so. This has bitten us. Cheap check: `grep -o '"php": "[^"]*"' composer.lock | sort -u` and report any constraint with an upper bound below 8.5, with the package that declares it if you can find it quickly. **If there is no such ceiling, say so explicitly** — it's a real piece of good news and worth recording so it isn't re-investigated later.
 - **`composer audit`.** Read-only, and more predictive than it looks: since Composer 2.9, versions with known advisories are blocked during resolution by default, so an advisory in the current set means a future `composer update` will *fail*, not warn. Use `composer audit --format=summary` for the count (the full output is long), then the full output only if you need the detail.
   - **Then ask a second question the count doesn't answer: is there a security patch available within the current minor line?** Check the advisories' "affected versions" against the installed version. A site on 5.73.23 where the fix landed in 5.73.24 is one patch short of clearing a CVE — that's an action available *today*, independent of the upgrade window, and it's the highest value-per-effort finding in the whole audit. Report it separately from the upgrade path.
+  - **But check the patch is actually installable — the advisory squeeze.** Composer 2.10 refuses to *select* any version affected by an advisory. Find the newest release of `statamic/cms` that still permits the current Laravel major, and check whether *that release itself* carries advisories (`composer show statamic/cms --all` lists versions; the advisories' affected ranges say whether it's clean). On peascod the last Laravel 11-compatible Statamic 5 (5.73.24) had seven advisories, every clean 5.x needed Laravel 12.40+, so **no patch was available without the framework move** — the upgrade *was* the security work. Say which shape this site has; it decides whether "patch now, upgrade later" exists at all. Never suggest `policy.advisories.block: false` as the way round it.
 - **The blocker hunt.** `composer why-not laravel/framework 13` and `composer why-not statamic/cms 6` answer this directly — run both and report what they name. Third-party Statamic addons are the usual culprit. These are what hold the target up.
 - **Don't cry wolf on known immovables.** Report these as expected, not as blockers:
   - **The root package itself** (`statamic/statamic dev-main requires laravel/framework (^11)`) will head the `why-not` output. That's just the `composer.json` constraint you'd edit as step one — it is not a blocker, and reporting it as one is noise.
   - `guzzlehttp/guzzle` stays on 7 because both laravel/framework and statamic/cms pin it.
   - PHPUnit stays on 12 per Laravel 13's own guidance.
+  - `laravel/tinker ^2.x` → `^3.0` and `php ^8.2` → `^8.3` are constraint edits, not blockers.
   - Statamic 6's transitive requirements (`league/glide ^3`, `symfony/lock ^7`, `symfony/var-exporter ^7`, `ueberdosis/tiptap-php ^2`) resolve automatically — list them as consequences, not obstacles.
 
   *This list is a snapshot and will age — treat it as a prior, and if the evidence in front of you disagrees, say so.*
-- **The stepping-stone trap.** Laravel 11 is EOL with unpatched advisories, so Composer's advisory blocking will refuse to resolve to it. A site on Laravel 10 goes 10 → 12 → 13, skipping 11 entirely. Note the route if the site is below 12.
+- **Dev dependencies the upgrade guide doesn't list.** `barryvdh/laravel-debugbar ^3.x` has no Laravel 13 support (needs `^4.4`) and was the only thing blocking peascod's L13 resolve. Name any dev tool that shows up in `why-not`.
+- **`laravel/helpers` is load-bearing if anything calls `str_slug`, `array_get`, `array_first` etc.** — grep `app/` and `routes/`. It looks vestigial and Shift may drop it (fatal), and on Laravel 13 `symfony/polyfill-php85` silently overrides `array_first`/`array_last` with a different signature. Count the calls; each is a `Str::`/`Arr::` swap.
+- **Addon bindings in `AppServiceProvider`.** `grep -nE 'bind|extend|singleton' app/Providers/AppServiceProvider.php` and note any that name an addon class. A binding required by an addon's old major can be fatal on its new one — peascod bound `Tiptap\Editor` to a bard-mutator v2 class that v3 no longer ships, and every Bard page 500'd. Count, don't investigate.
+- **The stepping-stone trap.** Laravel 11 is EOL with unpatched advisories, so Composer's advisory blocking will refuse to resolve to it. A site on Laravel 10 goes 10 → 12 → 13, skipping 11 entirely. Note the route if the site is below 12. **Any Laravel 12 stop must be ≥ 12.40** — Statamic 6 requires it.
 - **Addon compatibility is not settled by `composer why-not` alone.** If an addon hooks a subsystem that changed majors underneath it (e.g. a Bard addon over `tiptap-php` 1.x → 2.x), Composer's silence means the constraints allow it, not that it works. Flag such addons for a post-upgrade smoke test.
 
 ### Node + npm
@@ -86,16 +93,22 @@ If you're sitting above several site directories rather than inside one, enumera
 - **First decide whether Node matters here, and make it an explicit check, not an impression:** run `git check-ignore public/build` (or the project's build output path) and look for committed compiled output with `git ls-files public/build`.
   - **Gitignored and present on disk → assets are built on the server.** Node is load-bearing: it gates Vite and Tailwind majors, and it must move before or alongside the front-end work. Say so.
   - **Committed / built in CI → the server's Node is largely irrelevant** and shouldn't drive urgency.
-  - The reference anchor below notes a completed site sitting happily on Node 22. **That anchor only applies when the server isn't building assets.** Don't carry "don't panic about Node" across to a box that runs `npm run build`.
+  - **Even when assets are built on the server, Node 22.12+ is sufficient for the target front end.** Vite 8 and `laravel-vite-plugin` 3 declare `engines: ^20.19.0 || >=22.12.0`; peascod built them on Node 22.21 with no Node move. Node 24 is a preference (22 is maintenance LTS until 30 Apr 2027), not a blocker — report Node below 20.19 as blocking the front-end step, and 22.12+ as `routine`. Check the actual `engines` field in `node_modules/vite/package.json` if present rather than trusting this line forever.
 - `npm outdated` — counts, then notable ones. **Treat its output as unreliable:** in practice it has reported a wrong "latest" and omitted a direct dependency that was two majors behind. Cross-check against the real sources:
   - **`package.json` constraint ceilings** — the npm equivalent of the composer.json check, and the one v1 of this prompt was missing. A `"tailwindcss": "^3.4.3"` is a ceiling in exactly the way `"laravel/framework": "^11"` is. Name any you find.
   - **Resolved versions from `package-lock.json`** for what's actually installed.
+- **Vite / laravel-vite-plugin majors.** Target is Vite 8 + plugin 3 (+ Tailwind 4.3). From Vite 7 / plugin 2 this was a constraint bump with an unchanged manifest on peascod — `routine`. Note any leftover `@vitejs/plugin-vue2` import in `vite.config.js` (dead once CP Vue is gone).
 - **Tailwind major version.** Statamic 6 moves to Tailwind v4; if this project is on v3 that's a real migration cost, not a version bump. On a site with no other hidden costs this is often the single largest manual item — size it accordingly.
 - **Custom Vue in the control panel.** Statamic 6 moves the CP to Vue 3 + Inertia 2. Check `resources/js/cp.js` and any components directory. **Distinguish real components from the commented-out boilerplate Statamic ships** — the stock `cp.js` is entirely commented example code, and reading it as custom Vue would invent a cost that isn't there. If it's all boilerplate, say so: it removes a cost the version table implies.
 
 ### Laravel skeleton state (quick)
 
 Is this on the pre-11 skeleton (`app/Http/Kernel.php`, `app/Console/Kernel.php`, a fat `app/Providers/`) or the slim one (`bootstrap/app.php`)? The slim migration is separate work from the version bump, it's the usual route via Laravel Shift, and on a Statamic site it needs the `config/` directory reconciling afterwards. One line: which skeleton, and whether `config/` looks like current Laravel + Statamic conventions or has drifted.
+
+**Then make the Shift call, because it changes the cost and the risk:**
+- **Slim skeleton + small app** → recommend doing the Laravel steps **by hand, no Shift.** Measure it: `find app routes bootstrap -name '*.php' -not -path 'bootstrap/cache/*' | xargs wc -l | tail -1`. Under a few hundred lines, Laravel's own guides put 11→12 at ~5 minutes and 12→13 at ~10, and hand-editing removes the estate's dominant upgrade failure (below) rather than mitigating it. Peascod: ~250 lines, `config/` untouched across three framework steps.
+- **Pre-slim** → Shift is right for the flatten, **and** the plan needs a line-by-line `config/` diff after every Shift run.
+- **Either way, list the config defaults Shift is known to streamline away**, since they fail silently: `config/app.php` `name` and `timezone` defaults where `.env` sets no `APP_NAME` / `APP_TIMEZONE` (check presence with `grep -cE '^APP_(NAME|TIMEZONE)=' .env`), the `config/statamic/users.php` auth driver (CP login), `config/filesystems.php` `default`/`public`/`links`/cloud disks, all of `config/statamic/*`, and the `please` binary.
 
 ### Statamic edition & licence (quick)
 
@@ -107,11 +120,13 @@ Is this on the pre-11 skeleton (`app/Http/Kernel.php`, `app/Console/Kernel.php`,
 
 These are cost signals, not blockers. Count them, name them, fix nothing. Cap the output; if a pattern has many hits, say "many" and move on. **Report the clean results too** — a landmine list where most items came back clear is itself the finding, and recording it stops the next session re-checking. From Statamic's own 5→6 guide:
 
-- **Timezone** — `config/app.php` `timezone` not `UTC` *and* the site uses dated collections or date fields. In v6 dates convert to UTC at runtime, so displayed dates can shift. Highest-impact item here and invisible in any version table.
+- **Timezone** — `config/app.php` `timezone` not `UTC` *and* the site has **dated collections (`date: true`), `type: date` fields, or dated entry filenames**. In v6 dates convert to UTC at runtime; the real bite (tom-hammick, statamic/cms#14122) is date-only entries gaining a `-0000` filename suffix on save during BST, which autobackup then commits as renames twice a year. Highest-impact item when the preconditions hold. **`date_behavior:` without `date: true` is inert — a false positive peascod's first audit fell for.** If it applies, tom-hammick's 28-line `App\Entries\Entry::hasTime()` override is the fix.
 - **Carbon** — `nesbot/carbon` major in the lockfile; v6 requires Carbon 3. Note anything pinning Carbon 2.
 - **Search config** — `'searchables' => 'all'` in `config/statamic/search.php`. Deliberately not auto-migrated, so it's guaranteed manual work.
 - **`statamic` cache driver** in `config/cache.php` (removed in v6). **Grep for the driver, not the word** — a bare `grep statamic config/cache.php` false-positives on static-cache *paths* like `storage_path('statamic/static-urls-cache')`. Look for a `'statamic'` store key or `'driver' => 'statamic'`.
 - **Users in the database** — `config/statamic/users.php` repository set to `eloquent` rather than file. If so, v6 adds 2FA/passkey migrations to run.
+- **CP icon names.** v6 replaced the icon set; a stale `icon:` renders as a blank with no error and a sweep of `app/` for icon APIs misses it entirely. A pre-upgrade `vendor/` only holds the v5 icon set, so the audit can't resolve them yet: count the distinct `icon:` values in `resources/fieldsets` and `resources/blueprints` (`grep -rhoE '^\s*icon: [a-z0-9._-]+' resources/ | sort -u | wc -l`), and put a post-bump check against `vendor/statamic/cms/resources/svg/icons` into the plan. Replicator/Bard set *groups* carry icons one level above the sets, and fieldtype icons gained a `fieldtype-` prefix.
+- **Globals** — `content/globals/*.yaml` with a `data:` key will be migrated to per-site dirs during `composer update`. Not a cost, but the plan must include `php please stache:clear` straight after, or every global silently resolves empty.
 - **Templates/JS greps:** `moment` (removed), `relate` tag, `{{ session:` / `{{ cookie:` / `{{ nav:` / `{{ redirect:` wildcard form, `urlencode`, `where('status'`, `type: section` fieldtypes, custom Glide manipulators, Algolia.
 - For any hit, check whether the feature is actually *in use* before sizing it — a stale Algolia config block in a site that doesn't use Algolia is a deletion, not a migration.
 
@@ -120,6 +135,12 @@ These are cost signals, not blockers. Count them, name them, fix nothing. Cap th
 Cheap checks that consistently surface real problems adjacent to the upgrade:
 
 - **Session lifetime and driver.** `SESSION_LIFETIME` and `SESSION_DRIVER` from `.env`. With the `file` driver, a very long lifetime accumulates files indefinitely. If it looks long, quantify it: `ls storage/framework/sessions | wc -l` and `du -sh storage/framework/sessions`. A count in the tens of thousands is worth reporting.
+- **Session GC.** `grep -n lottery config/session.php`. `[2, 100]` with a large session dir is the 2026-09-04 outage shape (in-request GC walking 1.4 M files past nginx's 60 s timeout). Note it; don't redesign it.
+- **Static caching.** `STATAMIC_STATIC_CACHING_STRATEGY` and `STATAMIC_BACKGROUND_RECACHE` (allowlist grep), plus `grep -n ignore_query_strings config/statamic/static_caching.php` — `half` caches 200s *and* 404s forever, so `false` leaves bot query strings growing the cache unbounded. `APP_DEBUG=true` or `LOG_LEVEL=debug` in production is a finding.
+- **Backup & deploy scripts.** Read `autobackup.sh` if present: flag `git add .`, a `:!storage` pathspec (exits 1 under `set -e` on an ignored path), `optimize:clear` (outage contributor), a hard-coded webhook URL (credential — report presence only). Flag a `refresh.sh` on a zero-downtime site. `git check-ignore -q storage auth.json public/build` and `git status --porcelain` from inside `current/` — anything spurious means the backup cron is committing deploy artefacts.
+- **Sitemap.** `grep -n sitemap routes/web.php` and the sitemap template: canonical should be `/sitemap.xml` with `/sitemap` 301ing to it, and `<loc>` should use `{{ permalink }}` (peascod's used a non-existent `config:app:app_url` key, so every `<loc>` was relative). One `curl -s https://<site>/sitemap.xml | grep -c '<loc>/'` settles it — non-zero means relative URLs.
+- **nginx headers and asset caching** (read-only HTTP from the box is fine). Compare `curl -sI` on a page, a hashed asset under `/build/` or `/vendor/statamic/cp/build/`, and a 404: all three should carry `X-Frame-Options`, and the hashed asset should have a long `Cache-Control`. Missing on assets = `add_header` in a location block dropping inherited headers; missing on the 404 = no `always`. Both were in the template the estate copies. Without asset caching the v6 CP (558 code-split files) will feel slow and get blamed on Statamic.
+- **TLS renewal.** `ls /etc/cron.d/ | grep letsencrypt` and compare against the site's domains; `ls -la ~/.letsencrypt-renew/*.out` should show weekly timestamps. Forge once issued a peascod cert without a renewal cron and it silently expired. One line.
 - **Storage footprint.** `du -sh storage/*` sorted, plus `df -h /`. One line. Distinguishes hygiene from emergency.
 - **Env template drift.** If the project keeps env templates (e.g. `docs/*.env`), check whether a bad value appears in the templates as well as the live `.env` — a wrong setting in the template will be reintroduced on the next site build, so the fix has two homes.
 
@@ -136,14 +157,21 @@ Email is rarely configured on these servers, so this is a confirm-the-expected c
 Standing facts about how we run these sites. Apply them when sizing work and when recommending a route; flag anything on this site that contradicts them.
 
 - **Hosting** is Laravel Forge on DigitalOcean droplets. Multiple sites commonly share a box.
-- **Deployment** is moving to zero-downtime, which requires creating a new site on the VPS. Where a site is still on the older model, expect a `refresh.sh`-style script doing maintenance mode + install + build + cache warm; that becomes redundant under zero-downtime.
-- **Backups** run from a cron'd `autobackup.sh` committing to GitHub. House convention: stage with `git add -A -- ':!storage'` (not `git add .`), commit author set to the studio identity, committer left as the developer.
-- **Session lifetime** should be `SESSION_LIFETIME=43200` (30 days). Anything near a year is wrong and will have accumulated files.
-- **Static caching** in production is the `half` strategy with `STATAMIC_BACKGROUND_RECACHE=true`. Development runs no static caching.
-- **`STATAMIC_STACHE_WATCHER`** is `true` on development, `false` in production.
+- **Deployment** is Forge zero-downtime (`current -> releases/…`, shared `.env`, `storage`, `auth.json`, `public/robots.txt`), with Quick Deploy. Where a site is still on the older model, expect a `refresh.sh`-style script doing maintenance mode + install + build + cache warm; that becomes redundant under zero-downtime, and is dangerous where FPM has `validate_timestamps=0`. The estate deploy script (peascod `docs/forge-deploy.md`, adapted from tom-hammick) is: `[BOT]` commit guard → `cp:lock` → `$CREATE_RELEASE()` → `composer install --no-dev` → `npm ci && npm run build` → `artisan optimize` → `storage:link` → `stache:refresh` → `search:update --all` → `$ACTIVATE_RELEASE()` → `cp:unlock` → `cache:clear` → `static:clear` → `static:warm`. Keep scripts consistent across sites rather than adding per-site guards. It needs **`wesort/statamic-cp-lock`** installed (vcs repo entry) — note if absent.
+- **Content vs deploys.** `content/` is per-release and Statamic git integration is off, so a CP edit between the last backup and a deploy is lost. Note whether this site has the same exposure; don't redesign it in the audit.
+- **Backups** run from a Forge scheduled `autobackup.sh`, **run from `~/<site>/current`**, committing `[BOT] Automatic backup via cronjob` to GitHub. House convention (lcva-v2 `228c0a3`, peascod `42533dd`): **stage an allowlist, `git add -A -- content users resources public`**, mirroring `config/statamic/git.php`. *Not* `git add .`, and *not* `git add -A -- ':!storage'` — naming an ignored path exits 1 and `set -e` aborts before the commit (tested). No `optimize:clear`, no `artisan optimize`, no `static:warm --queue` on a sync queue, no webhook URL in the file. Author read from `STATAMIC_GIT_USER_NAME`/`_EMAIL` (defaults `wesort`); author/committer split is **still an open estate decision** — don't report a site as "wrong" on it.
+- **`.gitignore`** must ignore `/storage` and `auth.json` (plus `/public/build`, `/public/robots.txt`), with no `storage/**/.gitignore` skeleton tracked — otherwise the backup cron commits Forge symlinks.
+- **Session lifetime** is `SESSION_LIFETIME=10080` (7 days), `SESSION_DRIVER=file`. *(v2 said 43200; 30 days was rejected on 2026-09-05 after measuring ~8,300 bot sessions/day → ~250 k files and a 25 s concurrent GC scan vs nginx's 60 s timeout. 7 days settles ~58 k files.)* Anything above 7 days is a finding; near a year is an incident waiting to happen. Fix `docs/*.env` too.
+- **Static caching** in production is the `half` strategy with `STATAMIC_BACKGROUND_RECACHE=true` and `ignore_query_strings => true`. Development runs no static caching.
+- **`STATAMIC_STACHE_WATCHER`** is `true` on development, `false` in production. `APP_DEBUG=false` on both; `LOG_LEVEL=warning` in production.
+- **Redis and queues are not assumed.** Peascod runs `QUEUE_CONNECTION=sync`, `CACHE_STORE=file`, Redis installed but deliberately inactive; tom-hammick uses a Redis queue. Report which this site is — it changes the deploy script (`$RESTART_QUEUES()`, `static:warm --queue`) — and don't recommend Redis.
 - **Email** is intentionally unconfigured on these boxes.
-- **Documentation** lives in `docs/`. Ask for the intended reference/structure before rewriting it rather than inventing one.
-- **Laravel Shift** is the accepted route for skeleton, Laravel, Tailwind and Vite major migrations.
+- **nginx** carries the security headers with `always`, repeated inside the hashed-asset `location` (`^/(build|vendor/statamic/cp/build)/` → `expires 1y`, `public, immutable`), other static files `expires 1y` with no `add_header`, and `application/json` in `gzip_types`. Applied through the Forge UI per site, verified with `sudo nginx -t` — not edited on disk.
+- **Sitemap** is served at `/sitemap.xml` with `/sitemap` 301ing to it, `<loc>{{ permalink }}</loc>`, hidden entries excluded.
+- **`APP_KEY` / licence key in `docs/*.env`** is accepted practice on private repos (peascod, confirmed with the client). Record presence as known; don't re-raise it as a finding unless repo access has widened.
+- **Documentation** lives in `docs/`. Ask for the intended reference/structure before rewriting it rather than inventing one. The transferable upgrade write-up is peascod's `docs/upgrade-playbook.md`.
+- **Laravel Shift** is the accepted route for the pre-slim skeleton flatten and Tailwind 3→4. **On a slim skeleton with a small app, do the Laravel steps by hand** (see skeleton check). Route order: housekeeping → Laravel 12 (≥12.40) → **Statamic 6 on the Laravel 12 bridge** → Laravel 13 → front end isolated → cutover.
+- **Don't adopt Laravel 13 skeleton defaults wholesale:** `session.serialization => json` logs everyone out; `cache.serializable_classes => false` likely breaks the Stache. Flag if a Shift has already applied them.
 
 *Keep this section updated as conventions change — it's the part of this prompt with the shortest shelf life.*
 
@@ -159,8 +187,9 @@ For each area, state whether reaching the target is **routine**, **needs care**,
 - Tailwind v3 → v4, or custom Vue 2 CP components — cost that a version table hides.
 - A composer.json or package.json constraint acting as the real ceiling.
 - Pre-slim Laravel skeleton — not a blocker, but separate work with its own route.
+- **An addon with no stable S6 release — check what it actually does on this site's config before calling it a blocker.** Peascod's `duncanmcclean/static-cache-manager` (archived, alpha-only on v6) only acts on `full` caching; the site ran `half`, so it was inert and was simply removed.
 
-**Also report the costs that turned out to be absent.** A slim skeleton, no custom CP Vue, Carbon already on 3, no lockfile PHP ceiling — each is a cost the version table implies and the evidence rules out. These change the size estimate as much as the blockers do, and stating them stops the next person re-investigating.
+**Also report the costs that turned out to be absent.** A slim skeleton small enough to skip Shift, no custom CP Vue, Carbon already on 3, no lockfile PHP ceiling, PHP already ≥ 8.3 (no server change), Node already ≥ 22.12, an inert addon that can simply be dropped — each is a cost the version table implies and the evidence rules out. These change the size estimate as much as the blockers do, and stating them stops the next person re-investigating.
 
 ## Output
 
@@ -174,8 +203,9 @@ Default to replying inline only — no report file, no changes proposed. **If th
    - Target verdict is plain words: `routine`, `needs care`, `blocked`. Never a dot.
    - These two columns will disagree — that's the point. Something can be `🟡 security-only` and still `blocked`.
 5. **Blockers** — in prose. This is the part that matters most: not "you're N behind" but "here's what stands in the way and roughly what it'd take." Include the costs ruled out, not just the ones found.
-6. **Available now** — anything actionable today, independent of the upgrade window. A security patch within the current minor line is the common case; config hygiene is the other.
-7. **Hidden costs** — landmine sweep hits, skeleton state, Tailwind/Vue. Counted, not fixed. Record the clean results too.
+6. **Available now** — anything actionable today, independent of the upgrade window. A security patch within the current minor line is the common case — **but only if it survives the advisory squeeze; say explicitly if it doesn't**. Config hygiene (session lifetime, `APP_DEBUG`, nginx headers, sitemap, backup script) is the other.
+7. **Hidden costs** — landmine sweep hits, skeleton state and the Shift call, Tailwind/Vue, addon bindings, `laravel/helpers` calls, icon count. Counted, not fixed. Record the clean results too.
+7a. **Traps to put in the plan** — one line each, only those that apply: reload PHP before trusting any HTTP check (`validate_timestamps=0`); `stache:clear` after the globals migration; don't verify URL-dependent behaviour via tinker `app()->handle()` (the `Cascade` singleton keeps `/`); first zero-downtime deploy across a major can leave a route cache with no `statamic.cp.*` routes → `php artisan optimize:clear`; comment out `cp:lock` on the first deploy if the live release lacks the addon.
 8. **Email:** one line.
 9. **Couldn't confirm:** what was skipped (sudo, no server access, sibling sites) and what's unknown.
 
@@ -187,7 +217,11 @@ Useful as a sanity anchor for "what does done look like" — versions observed o
 
 PHP 8.5.8 · Composer 2.10 · Node 22 · Laravel 13.21 · Statamic 6.26 · Vite 8.1 · laravel-vite-plugin 3.1 · Tailwind 4.3 · Alpine 3.15.
 
-Note Node 22 there: current managed-host provisioning still lands on 22, which is `🟡 maintenance LTS`. **That's acceptable only because that site doesn't build assets on the server.** On a box that does, target Node 24.
+Second anchor — **peascod.studio, 5 Sep 2026**, from Laravel 11.46.1 + Statamic 5.67.0 in one day, no Shift, assets built on the server:
+
+PHP 8.4.14 · Composer 2.10.3 · Node 22.21 · Laravel 13.30.1 · Statamic 6.31.0 · Vite 8.2.2 · laravel-vite-plugin 3.2.0 · Tailwind 4.3 · bard-mutator 3.0.5 · cp-lock 1.1.0. `composer audit` 78 → 0, `npm audit` 3 → 0.
+
+Note Node 22 on both: `🟡 maintenance LTS`, and **sufficient even where assets are built on the server** (Vite 8 needs `>=22.12.0`). Node 24 is the preference when a Node move is happening anyway, not a reason to schedule one. Likewise PHP 8.4 reaches the target; 8.5 is the aim.
 
 ## Reference: support & EOL (verified 22 July 2026)
 
@@ -328,3 +362,35 @@ Each change traces to something the v1 run got wrong, nearly missed, or spent ef
 **New section**
 
 19. **Estate conventions** — standing facts (Forge/DO, zero-downtime, `autobackup.sh` staging and authorship, session lifetime, static caching, stache watcher, email, docs, Laravel Shift) so they inform sizing on every site instead of being re-established each time.
+
+---
+
+## What changed in v3
+
+From the peascod.studio upgrade (4–16 Sep 2026): the first site taken all the way through after a v2 audit. Each item is something v2 got wrong, or that cost time and wasn't asked.
+
+**Corrections**
+
+1. **Session lifetime convention 43200 → 10080.** 30 days was measured and rejected in favour of 7.
+2. **Autobackup staging `':!storage'` → allowlist.** The `:!storage` form exits 1 under `set -e` on an already-ignored path — tested.
+3. **"FPM pools are per site" qualified.** Default Forge boxes share the `www` pool, so a per-site PHP move means splitting it first.
+4. **Node 24 on build boxes downgraded from target to preference.** Vite 8 / plugin 3 accept `>=22.12.0`; peascod built on 22.21.
+5. **The "patch within the current minor" check now tests installability.** v2's highest value-per-effort finding turned out to be uninstallable: Composer 2.10 refuses advisory-affected versions, and every Laravel 11-compatible Statamic 5 had advisories.
+6. **Timezone landmine tightened.** `date_behavior` without `date: true` was a false positive in the peascod audit.
+7. **Shift is no longer the default Laravel route.** On a small slim-skeleton app, by hand removes the config-dropping failure mode entirely.
+
+**New checks**
+
+8. The Shift call with a line count, and the silent config defaults Shift drops (`app.name`, `timezone`, auth driver, disks, `please`).
+9. `laravel/helpers` usage and the `polyfill-php85` `array_first` collision; addon bindings in `AppServiceProvider` (the one real breakage on peascod); `laravel-debugbar` blocking L13; Laravel 12 stop must be ≥ 12.40.
+10. OPcache `validate_timestamps` on FPM — decides how verification must be done.
+11. CP icon names (silent blanks; missed by an `app/` sweep) and the globals `stache:clear` requirement.
+12. Config hygiene: session lottery, static-caching env + `ignore_query_strings`, `APP_DEBUG`/`LOG_LEVEL`, `autobackup.sh` / `refresh.sh` / `.gitignore` contents, sitemap canonical URL and absolute `<loc>`, nginx headers + asset caching on page/asset/404, Let's Encrypt renewal cron.
+13. Inert addons: check what a "blocking" addon does on this site's config before sizing it.
+
+**New output**
+
+14. **7a. Traps to put in the plan** — stale bytecode, globals stache, tinker `Cascade`, first-deploy route cache, `cp:lock` on first deploy.
+15. Second reference anchor (peascod) showing a no-server-change upgrade on PHP 8.4 / Node 22.
+
+**Estate conventions expanded** — zero-downtime deploy script order, content-vs-deploy exposure, `.gitignore`, Redis/queue as a per-site fact rather than an assumption, nginx, sitemap, `APP_KEY`-in-templates acceptance, skeleton defaults not to adopt, route order.
