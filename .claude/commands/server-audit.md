@@ -1,6 +1,7 @@
 ---
 name: server-audit
 description: Run a fast, read-only, no-sudo audit of a server's stack for security exposure from end-of-life and outdated software and known CVEs — OS, kernel, PHP, Laravel, Statamic, Node, nginx, Redis, Composer, Vite, per-site composer/npm advisories, and whether email (a password-reset / account-takeover vector) is configured on any site. Use this whenever the user wants to check a server or site's health, EOL exposure, patch/version currency, or security posture; asks things like "is this box up to date", "what's out of date / unsupported", "check versions on <server>", "audit this server", or is triaging which Forge servers need attention — even without the word "audit". Read-only and sudo-free, so safe on production. Built to run via Claude Code on the server itself, but the instructions also stand alone if pasted as a prompt.
+allowed-tools: Read, Glob, Grep, Bash(cat /etc/os-release), Bash(lsb_release -a), Bash(uname -r), Bash(ls /etc/php/*), Bash(update-alternatives --list php*), Bash(php -v), Bash(php artisan --version), Bash(composer --version), Bash(composer show *), Bash(composer outdated *), Bash(composer audit*), Bash(node -v), Bash(npm -v), Bash(npm audit*), Bash(nginx -v), Bash(apache2 -v), Bash(mysql --version), Bash(mariadb --version), Bash(redis-server --version), Bash(redis-cli --version), Bash(apt list --upgradable*), Bash(curl -s https://endoflife.date/api/*)
 ---
 
 # Stack health & EOL audit
