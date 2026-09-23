@@ -1,6 +1,7 @@
 ---
 name: statusline-config
 description: Sets the style and features of Claude Code's status line.
+allowed-tools: Read
 ---
 
 Create a shell script at `~/.claude/statusline-command.sh` and register it in `~/.claude/settings.json` (statusLine.type: "command"). The script receives Claude Code's status JSON on stdin and prints a single line of pipe-separated (|) segments. Discover the exact JSON field names yourself from the current payload rather than assuming them — the schema evolves.
