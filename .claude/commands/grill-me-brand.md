@@ -1,6 +1,7 @@
 ---
 name: grill-me-brand
 description: Interrogate a business's brand one question at a time until what they do, who it's for, and why it matters are sharp enough to act on — then capture it as a one-page brand core that content can be held against. A brand-clarity variant of grill-me, built for small and medium businesses (1–50 people). Use this whenever someone wants to clarify or refine their brand, positioning, messaging, value proposition, tagline, tone of voice, or target audience; whenever they say their brand is "muddled," "generic," "trying to say too much," or "doesn't sound like us"; or whenever they're about to roll a brand out to a website or social channels and want the core nailed down first — even if they never say the word "brand."
+allowed-tools: Read, WebFetch, AskUserQuestion
 ---
  
 # grill-me-brand
