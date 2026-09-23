@@ -1,3 +1,11 @@
+---
+name: statamic-upgrade-readiness
+description: Read-only audit of a Statamic project and its server against the upgrade target (Laravel 13 + Statamic 6, PHP 8.3+ floor, 8.5 ideal) — PHP and OS status, Composer blockers, S6 landmines, licence and hygiene checks — ending in a route decision (upgrade in place vs rebuild). No installs, no sudo, never prints secrets.
+allowed-tools: Read, Glob, Grep, Bash(php -v*), Bash(ls *), Bash(uname *), Bash(cat /etc/os-release), Bash(composer outdated*), Bash(composer show*), Bash(composer audit*), Bash(composer why-not*), Bash(composer check-platform-reqs*), Bash(npm outdated*), Bash(node -v), Bash(git log*), Bash(git status*), Bash(git branch*), Bash(git check-ignore*)
+---
+
+# Statamic upgrade readiness
+
 Audit this Statamic project and its server for how far they are from our upgrade target, what's in the way, and which route gets there. READ-ONLY: this pass produces a picture and a decision, never a change. Budget about 3 minutes — thorough enough to be trusted, not a forensic audit. If something is slow or ambiguous, note it and move on.
 
 **If you run short on time, drop checks from the bottom up:** hygiene goes first, then the S6 landmine sweep, then the skeleton and licence checks. Never drop PHP version, the Composer blocker hunt, or the route call — those decide everything.
