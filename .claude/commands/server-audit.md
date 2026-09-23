@@ -1,5 +1,5 @@
 ---
-name: stack-health-audit
+name: server-audit
 description: Run a fast, read-only, no-sudo audit of a server's stack for security exposure from end-of-life and outdated software and known CVEs — OS, kernel, PHP, Laravel, Statamic, Node, nginx, Redis, Composer, Vite, per-site composer/npm advisories, and whether email (a password-reset / account-takeover vector) is configured on any site. Use this whenever the user wants to check a server or site's health, EOL exposure, patch/version currency, or security posture; asks things like "is this box up to date", "what's out of date / unsupported", "check versions on <server>", "audit this server", or is triaging which Forge servers need attention — even without the word "audit". Read-only and sudo-free, so safe on production. Built to run via Claude Code on the server itself, but the instructions also stand alone if pasted as a prompt.
 ---
 
