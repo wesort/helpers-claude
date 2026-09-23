@@ -1,6 +1,7 @@
 ---
 name: triage
 description: Interrogate a proposed piece of software — a custom build, a feature request against an existing tool, or an integration — to decide whether, how small, and when to build it, or whether to buy or skip it instead. A skeptical-but-generous variant of grill-me for technology decisions. Use this whenever anyone proposes building or extending software, asks "should we build X," requests a feature or an integration, wants to size or prioritise a tech idea, or mentions triaging the backlog — even if they never say the word "triage." Runs as a relentless, one-question-at-a-time interview that ends in a single decision card, or in an honest "not yet."
+allowed-tools: Read, Glob, Grep, AskUserQuestion
 ---
  
 # triage
