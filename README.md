@@ -26,6 +26,13 @@ if the project has local changes worth pushing upstream.
 | `/statamic-upgrade-readiness` | Read-only audit of a Statamic site's route to Laravel 13 + Statamic 6 |
 | `/statusline-config` | Set the style and features of Claude Code's status line |
 
+| Skill | Description |
+|-------|-------------|
+| `static-site-archive` | Turn a static, Statamic v1/v2 or other CMS site into a static copy on Netlify, then retire the old server-side site |
+
+Skills live in `.claude/skills/<name>/` and can bundle scripts.
+`/sync-check` only compares commands, so check skills by hand.
+
 ## Install
 
 Paste this into Claude Code from the root of the target project:
@@ -39,13 +46,15 @@ Install my helpers into this repo from https://github.com/wesort/helpers-claude
 2. Copy every .claude/commands/*.md into this project's
    .claude/commands/ (create it if missing). If a file already exists
    here and differs, don't overwrite it — list it and ask me.
+   Do the same for each .claude/skills/<name>/ folder, copying the
+   whole folder (SKILL.md and scripts/).
 3. Make sure .claude/settings.local.json is in .gitignore, so only
    the shared commands get committed.
 4. Report what was installed, the helpers commit it came from, and
    flag any command that doesn't fit this project (wrong stack,
    needs a tool that isn't available here, etc).
 5. Don't commit until I ask. When I do, commit only
-   .claude/commands/ and .gitignore.
+   .claude/commands/, .claude/skills/ and .gitignore.
 6. Delete the clone when done.
 ```
 
