@@ -8,6 +8,8 @@ files — no build tools, no runtime dependencies.
 ## Repo Structure
 
 - `.claude/commands/` — Slash command markdown files
+- `.claude/skills/<name>/` — Skills: a `SKILL.md` plus any
+  dependency-free `scripts/` it needs
 - `README.md` — Purpose, structure, how the loose coupling works
 - `CLAUDE.md` — This file; conventions for working in this repo
 
@@ -23,6 +25,17 @@ files — no build tools, no runtime dependencies.
   steps, rules, and output format.
 - Keep `allowed-tools` minimal — only request the permissions the
   command actually needs.
+
+## Skill Writing Conventions
+
+- `SKILL.md` frontmatter needs `name` and `description`; the
+  description says when to use the skill.
+- The same portability rule applies: no client, domain, server or
+  person names, and no details of real incidents. Site-specific
+  findings belong in the site's own repo.
+- Mark every point that needs the user's decision, and say what
+  only the user can do.
+- Scripts must run with a stock interpreter and no dependencies.
 
 ## Commit Messages
 
