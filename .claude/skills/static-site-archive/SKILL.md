@@ -1,6 +1,6 @@
 ---
 name: static-site-archive
-description: Turn a site into a static copy hosted on Netlify, then retire the server it ran on. Covers sites that are already static, Statamic v1 and v2, and other server-rendered CMS sites (crawled with wget). Use when archiving, freezing or retiring a site, moving a static site to Netlify, or when a wget mirror won't deploy on Netlify or has broken srcset images or '?' filenames. Walks the user through every decision that needs their input.
+description: Turn a site into a static copy hosted on Netlify, then retire the server it ran on. Covers sites that are already static, Statamic v1, v2 and v3+, and other server-rendered CMS sites (crawled with wget). Use when archiving, freezing or retiring a site, moving a static site to Netlify, or when a wget mirror won't deploy on Netlify or has broken srcset images or '?' filenames. Walks the user through every decision that needs their input.
 ---
 
 # Site → static copy on Netlify
@@ -29,6 +29,7 @@ Work through the phases in order. Each one ends in something checkable; don't st
 
 - **Never print secrets.** Read `.env`, user files and config only for named keys (`grep -E '^(APP_ENV|APP_URL)=' .env`). Report that credentials or password hashes exist, never their values.
 - **No sudo.** If something needs root, tell the user what to add and where.
+- **Check who you'll commit as.** On a shared server, `git config user.name` / `user.email` may be someone else's (a client's, a previous developer's). Show them and **ASK** before the first commit; amending authorship after a push means a force-push.
 - **Confirm before anything irreversible or public:** committing changes that were already sitting uncommitted on the server, pushing, editing CMS settings or content on a live site, deleting generated files, and anything in the list above.
 - **Revert every temporary CMS change** after the crawl, and check the live site afterwards. Keep a running list of them.
 - **Nothing identifying goes into this skill.** Site-specific findings belong in the site repo's `ARCHIVE.md`.
@@ -38,31 +39,33 @@ Work through the phases in order. Each one ends in something checkable; don't st
 | # | Decision | When | Default to recommend |
 |---|---|---|---|
 | D1 | Archive (frozen, `noindex`) or a live site just changing host (indexable)? | Phase 0 | — |
-| D2 | Which domain will the static copy live on, and what happens to the main domain? | Phase 0 | An archive subdomain, e.g. `v2.example.com` |
-| D3 | Which repo and branch does Netlify deploy? Folder name for the mirror? | Phase 0 | The site's existing repo and current branch; `archive/` |
+| D2 | Which domain will the static copy live on, and what happens to the main domain? It can change late (see Phase 5). | Phase 0 | An archive subdomain, e.g. `v2.example.com` |
+| D3 | Which repo and branch does Netlify deploy? Folder name for the mirror? Tag the last CMS commit? | Phase 0 | The site's existing repo and current branch; `archive/`; an annotated tag on the commit before the archive |
 | D4 | Commit the uncommitted changes found on the server? | Phase 1 | Show the diff, then ask |
 | D5 | Hidden pages and drafts: include or leave out, per item? | Phase 1 | Include hidden, ask about each draft |
 | D6 | Redirects, short links and vanity URLs: keep all? | Phase 1 | Keep all, including external and dead ones |
 | D7 | Analytics and third-party scripts: keep, remove, or self-host, per script? | Phase 3 | Remove dead services; ask about the rest |
-| D8 | Forms, search, login, comments: remove or replace (e.g. with a mailto link)? | Phase 3 | Remove |
+| D8 | Forms, search, login, comments, and embedded third-party forms (iframes): remove or replace (e.g. with a mailto link)? | Phase 3 | Remove; an embedded form keeps submitting to the real service |
 | D9 | README wording: what the site was, where its successor lives, credits | Phase 7 | Ask for the text |
 | D10 | When to delete the old site | Phase 6 | After verification; the user may want it as a dev environment for a few days |
+| D11 | If the static copy ends up on a different hostname: redirect the old one or retire it? | Phase 5 | Redirect (a Netlify domain alias) |
+| D12 | `robots.txt` for an archive: none, or disallow-all? | Phase 3 | None, so crawlers can see `noindex` |
 
 ## Scripts
 
 In `scripts/`, Python 3.6+ with no dependencies. Copy them into the site repo as `archive-tools/`, alongside the crawl's `urls.txt` and `crawl.sh`, so the repo is self-contained.
 
 - **`fix_mirror.py MIRROR [--dry-run] [--noindex] [--old-domain DOMAIN]`**
-  1. Rebuilds `srcset`s that wget mangled. The original width descriptors can't be recovered, so each candidate gets its image's real pixel width.
-  2. Renames files with `?` or `#` in the name and rewrites the references to them.
+  1. Rebuilds `srcset`s that wget mangled. The original width descriptors can't be recovered, so each candidate gets its image's real pixel width. Warns if a rebuilt `srcset` has only one candidate.
+  2. Renames files with `?` or `#` in the name, drops commas from file and folder names, and rewrites the references.
   3. With `--noindex`, leaves each page with exactly one `noindex,nofollow` robots tag.
-  4. Lists what still needs a human.
-- **`linkcheck.py MIRROR`**: checks that every local `href`/`src`/`srcset`/`url()` resolves. Exits 1 on a missing target or a `?`/`#` filename.
+  4. Lists what still needs a human: analytics, forms, `<img>` tags whose `src` is a page, HTML comments naming the environment or a commit, external script and iframe hosts.
+- **`linkcheck.py MIRROR`**: checks that every local `href`/`src`/`srcset`/`url()` resolves (a clean URL `/about` counts if `about.html` exists, as Netlify serves it). Exits 1 on a missing target or a `?`/`#` filename.
 - **`verify_deploy.py MIRROR DEPLOY_URL [--live LIVE_URL] [--indexable]`**: checks the deployed site.
   - every file returns 200, and non-HTML files are byte-identical;
   - every page has the `X-Robots-Tag` header and one noindex meta tag (skipped with `--indexable`);
   - every `srcset` candidate loads and its descriptor equals the image's real width;
-  - with `--live`, page text matches the original site;
+  - with `--live`, page text matches the original site, and no image has lost the extra sizes its live `srcset` has;
   - CMS internals and unknown URLs return 404;
   - it reports any HTML Netlify injects.
 
@@ -78,7 +81,7 @@ In `scripts/`, Python 3.6+ with no dependencies. Copy them into the site repo as
    | A static-site generator (`package.json` build script, `_config.yml`, `config.toml`…) | Generated static | Phase 2A, using the build output |
    | `_app/` and `_content/` | Statamic v1 | Phase 2B |
    | `statamic/` and `site/` (version in `statamic/core/Statamic.php`) | Statamic v2 | Phase 2B |
-   | `statamic/cms` in `composer.json` | Statamic v3+ | Prefer its own static site generator; otherwise Phase 2B |
+   | `statamic/cms` in `composer.json` | Statamic v3+ | Phase 2B with the Statamic v3+ notes. The `statamic/ssg` addon is the alternative, but means adding a Composer dependency to the live site |
    | Any other server-rendered site | Other CMS | Phase 2B; find the equivalents of the Statamic notes yourself |
 
    A "static" site can still depend on the server: grep for `.php`, server-side includes (`<!--#include`), `.htaccess` rules, and rewrite or redirect rules in the web-server config. Anything found either becomes a Netlify redirect or header, or makes it a Phase 2B crawl.
@@ -105,6 +108,8 @@ Report findings to the user as a short list before changing anything.
    - `git status --short`. **ASK D4** before committing anything that was already there; show the diff.
    - `crontab -l`. A backup script running `git add .` on a schedule will silently commit, or revert, your work. **ASK** before disabling it.
    - `git rev-parse --abbrev-ref HEAD`: Netlify must deploy this branch (D3).
+   - `git fetch && git status -sb`: the branch should match its remote before you tag it.
+   - If D3 says tag: `git tag -a NAME -m "…" HEAD` now, before any archive commit, and push it with the first push.
 
 3. **`.gitignore`.** Check the mirror folder isn't ignored: `git check-ignore -v MIRROR/x.html`. A rule like `static/` matches a folder of that name at any depth, and some CMSs write their page cache to `static/`, which is why `archive/` is the default.
 
@@ -115,6 +120,13 @@ Report findings to the user as a short list before changing anything.
    - **Anything referenced only from JavaScript, feeds or JSON.** wget follows HTML and CSS only.
    - Statamic v1: `_`-prefixed entries are hidden; `__`-prefixed are drafts.
    - Statamic v2: `_`-prefixed files are drafts; `is_hidden: true` items are served but hidden. List `site/content/{pages,collections,taxonomies}` with each file's `is_hidden`. Entries can carry their own `redirect:` field (`grep -rln '^redirect:' site/content`).
+   - Statamic v3+: drafts have `published: false` in the entry's front matter. Ask Statamic for every URL rather than deriving them from filenames, since routes, mounts and trees decide them:
+
+     ```
+     php artisan tinker --execute='foreach (Statamic\Facades\Entry::all() as $e) echo ($e->published() ? "P " : "D ").$e->collectionHandle()." ".$e->url()."\n";'
+     ```
+
+     Pages that are published but not in navigation (style guides, WIP pages, help pages) are still served: list them for D5. Custom routes and redirects live in `routes/web.php` (`Route::statamic`, `Route::redirect`).
 
    **ASK D5** with the actual list of hidden items and drafts.
 
@@ -127,9 +139,11 @@ Report findings to the user as a short list before changing anything.
      - Exclude their paths from the crawl, or wget saves the redirect target under the redirect's path.
    - **Protected routes, forms, search and auth:** exclude them.
 
-6. **Environment-conditional output.** Templates often switch on the environment name, so analytics or robots tags gated on `production` may be missing from (or present in) what you crawl. Grep the layouts for the environment variable and check what the site's current environment is.
+6. **Environment-conditional output.** Templates often switch on the environment name, so analytics or robots tags gated on `production` may be missing from (or present in) what you crawl. Grep the layouts for the environment variable and check what the site's current environment is. Also look for HTML comments in the layout that print the environment, app URL or latest commit: offer to cut them down in the mirror.
 
 7. **What can't work as static files.** Search, forms, comments, login/register/account pages, anything per-visitor. List them for D8.
+
+8. **Assets on external storage.** If an asset container is on S3, DigitalOcean Spaces or similar, resized images come through the CMS and get crawled, but files the content links to directly (videos, PDFs, originals) stay on the bucket. **ASK** whether the bucket will outlive the archive; if not, copy those files into `MIRROR` and rewrite the links.
 
 ## 2A. Already static: collect the files
 
@@ -156,6 +170,25 @@ Report findings to the user as a short list before changing anything.
    5. **Before deleting the generated `img/` folder, copy in the images wget skipped.** wget doesn't follow `<meta>` tags, so social-card images (`og:image`, `twitter:image`) were generated during warming but never fetched. Copy every `content="https://DOMAIN/img/…"` target into `MIRROR/img/`, removing any `/./` in those paths. Then check that every absolute `https://DOMAIN/…` URL in the mirror resolves to a file. The md5 filenames are deterministic, so the steps can be repeated if needed.
    6. **Revert:** restore `assets.yaml`, rename drafts back, **ASK** before `rm -rf img`, clear the caches again, and check the live site renders its original image URLs.
 
+   **Statamic v3+ (Glide):**
+   1. Config is often cached (`bootstrap/cache/config.php` exists), so every config edit needs `php artisan config:cache` to take effect, and again after reverting.
+   2. Set `'cache' => true` under `image_manipulation` in `config/statamic/assets.php`. URLs become `/img/containers/<container>/<path>/<md5>/<file>` for local containers, or `/img/http/<file>/<md5>/<file>` for assets served by URL (S3, Spaces). **Each size is in its own `<md5>` folder.**
+   3. Publish drafts by editing `published:`; the Stache watcher is usually off in production, so run `php please stache:clear && php please stache:warm`, then `php artisan cache:clear` and `php please static:clear`.
+   4. Warm every page as above. Image-heavy pages can hit the web server's timeout (a 504 at about 90 s on nginx): the images made so far are kept, so request again until every page returns 200.
+   5. Crawl, then copy the social-card images in from `public/img/` and check every absolute URL resolves, as for v2.
+   6. **Revert** with `git checkout` on the config and content files, rebuild the config cache and the Stache, and check that drafts 404 again and image URLs are back to their original form. **ASK** before deleting `public/img/`.
+
+   **Re-rendering a page without touching the live site (Statamic v3+).** To recover what a page looked like at crawl time, for instance to repair a mirror, render it inside a throwaway `tinker` process with the config changed in memory only:
+
+   ```php
+   config(['statamic.assets.image_manipulation.cache' => true, 'statamic.static_caching.strategy' => null]);
+   $res = app(Illuminate\Contracts\Http\Kernel::class)->handle(Illuminate\Http\Request::create('https://DOMAIN/path', 'GET'));
+   ```
+
+   - Pass the full URL: Statamic picks the site by host, so a bare path returns 404.
+   - Drafts can't be rendered this way; they return 404.
+   - `Statamic\Facades\Image::manipulate($url, ['p' => '<preset>', 'fit' => 'max'])` returns the same cached URL as the Glide tag for preset-based images. `crop_focal` crops don't reproduce this way: for those, use the files wget already fetched.
+
 ### Crawl
 
 ```
@@ -173,7 +206,8 @@ wget -e robots=off --mirror --page-requisites --convert-links --adjust-extension
 
 ### What wget does to a mirror (tested on GNU Wget 1.19.4)
 
-- `--convert-links` mangles a `srcset` whose value spans several lines or contains `&amp;`. The result looks like `a.jpg596cba1.jpg 360w../b.jpg… 625../c.jpg 90…`. `fix_mirror.py` repairs it. wget does fetch every candidate.
+- `--convert-links` mangles a `srcset` whose value spans several lines or contains `&amp;`. The result looks like `a.jpg596cba1.jpg 360w../b.jpg… 625../c.jpg 90…`. `fix_mirror.py` repairs it, including when each size sits in its own folder (Statamic v3+ Glide). wget does fetch every candidate. **After any srcset repair, compare a few images' candidate counts with the live page:** the fixer warns about rebuilt srcsets with a single candidate, and `verify_deploy.py --live` fails on them.
+- A comma in a filename breaks `srcset`: browsers split candidates on commas. `fix_mirror.py` drops commas from file and folder names and rewrites references.
 - A URL with a query keeps the query in the saved filename (`news?page=2.html`, `styles.css?v=123.css`), and references to it are written with `%3F`. Netlify refuses to deploy filenames containing `?` or `#`. `fix_mirror.py` renames them.
 - References wget couldn't fetch (a 404, or a rejected path) are left as absolute URLs to the original domain. `--old-domain` lists them.
 - Absolute URLs in `<meta>` tags and sitemap `<loc>`s are never converted and their targets never fetched. They're fine if the static copy keeps the same domain, provided the targets exist.
@@ -205,11 +239,13 @@ Then work through the report:
   - Scripts hotlinked from another domain the owner controls: download them into the mirror, after checking the page really loads and uses them.
   - Links to redirect paths stay absolute, because the crawl rejected them, and `linkcheck.py` reports them missing. Point each at its final page, so internal links don't depend on redirects. The Netlify redirects still cover links from outside.
 - **Extensionless files** (e.g. `feed`): give each a `Content-Type` header in `netlify.toml`, or better, add the extension in the CMS and re-crawl that URL.
-- **Forms, search, login. ASK D8**, then remove or replace them.
+- **Forms, search, login. ASK D8**, then remove or replace them. The report lists external iframe hosts: an embedded third-party form (Airtable, Google Forms, Typeform…) still works from the static copy and still submits to the real service.
+- **`<img>` whose `src` is a page.** An image field left empty in the CMS can render `<img src="">`, which wget converts to the page's own filename. The report lists them; remove the tag.
+- **Absolute URLs that should stay absolute.** `og:url`, `og:image`, `twitter:image` and sitemap `<loc>`s must be absolute: link previews and sitemaps don't resolve relative URLs. Users retiring a server sometimes ask to make *everything* relative; explain that these name the domain, not the server, and once DNS points at Netlify, Netlify serves them. Check every one resolves to a file in `MIRROR`. If the static copy will be served on a different domain from the one crawled, rewrite them to the final domain.
 - **404 page.** Fetch the site's own (`curl https://DOMAIN/this-page-does-not-exist`), make every URL in it root-relative (Netlify serves it at any depth, so relative URLs break), match any renamed CSS filename, set the robots tag, and save it as `MIRROR/404.html`.
 - **Content the crawl couldn't reach.** Prefer publishing it temporarily and crawling it. Otherwise build each page by hand from an existing page of the same type, and generate its images to match the CMS's sizes. If the CMS strips colour profiles, convert wide-gamut originals to sRGB first: `convert in.jpg -profile sRGB.icc -resize '1200x1000>' -strip -quality 80 out.jpg`.
 - **JavaScript features.** `grep -rhoE "<script[^>]*>" archive | sort | uniq -c` shows what's there. Serve locally (`cd archive && python3 -m http.server 8000`) and ask the user to click through anything script-driven: galleries, sliders, video embeds.
-- **`robots.txt`.** For an archive, don't ship one that disallows crawling: crawlers must be able to fetch a page to see its `noindex`.
+- **`robots.txt`. ASK D12.** For an archive, recommend not shipping one that disallows crawling: crawlers must be able to fetch a page to see its `noindex`, so a disallowed page that's already indexed can linger as a bare link. If the user wants disallow-all anyway, ship it and record the trade-off.
 
 ## 4. Netlify
 
@@ -262,7 +298,8 @@ Then work through the report:
    - Ask the user to click through the deploy and confirm it looks right.
 2. **User:** add the custom domain to the Netlify site.
 3. **User:** at the DNS provider, point the domain at Netlify. For a subdomain, replace the `A` record with a `CNAME` to `SITE.netlify.app`. For an apex domain, follow Netlify's instructions for that provider. Give them the exact record to enter.
-4. **Wait for the certificate, then verify on the domain.**
+   **If the domain changes** (D2 often does once the user sees the deploy): rewrite the absolute meta and sitemap URLs to the new domain, update README and `ARCHIVE.md`, and **ASK D11** about the old hostname. A redirect is a Netlify domain alias plus a DNS record. Retiring it means deleting its DNS record *no later than* the server goes: a record left pointing at a released IP can end up serving someone else's machine.
+4. **Wait for the certificate, then verify on the domain.** Provisioning can fail at first and take up to 24 hours. Meanwhile verify on `SITE.netlify.app`, and don't test the custom domain over plain HTTP.
    - Check the authoritative answer first (`dig DOMAIN @<authoritative-ns>`), then a public resolver (`@1.1.1.1`). Resolvers that cached the old record wait out its TTL, and the machine you're on may be one of them.
    - Until Netlify issues the certificate, HTTPS on the domain fails with a certificate name mismatch. Poll it: `echo | openssl s_client -connect NETLIFY_IP:443 -servername DOMAIN 2>/dev/null | openssl x509 -noout -ext subjectAltName`, with `NETLIFY_IP` from `dig +short SITE.netlify.app @1.1.1.1`.
    - While this machine still resolves the old address, use `curl --resolve DOMAIN:443:NETLIFY_IP`, and run `verify_deploy.py` under a shim that sends the domain to Netlify (SNI and the Host header stay `DOMAIN`):
@@ -301,7 +338,8 @@ Write these as you go, not at the end.
 - **`README.md`**: a short human description. **ASK D9** for the wording: what the site was, where its successor lives, who made it.
 - **`ARCHIVE.md`**:
   - a status checklist, including what's still pending and who owns it;
-  - every decision (D1–D10) and who made it;
+  - every decision (D1–D12) and who made it;
+  - the tag on the last CMS commit, if any;
   - the temporary CMS changes and that they were reverted;
   - where the seeds came from, and the crawl command;
   - the fixes and hand edits;
