@@ -7,6 +7,8 @@
    offsets when a srcset spans several lines or contains &amp;).
 2. Rename files whose names contain '?' or '#' (Netlify refuses to deploy them)
    and rewrite the references to them (wget writes those as %3F / %23).
+   Also drop commas from file and folder names (a comma splits a srcset
+   candidate in two) and rewrite the references.
 3. --noindex: leave every page with exactly one
    <meta name="robots" content="noindex,nofollow" />.
 4. Report leftovers for a human: .php names, extensionless files, links to the
@@ -140,28 +142,38 @@ def rebuild_srcset(value, root, base_dir):
                 return end
         return None
 
+    def urls_from(prefix):
+        urls, pos = [], 0
+        while True:
+            start = s.find(prefix, pos)
+            if start < 0:
+                return urls
+            end = file_end(start)
+            if end is None:
+                pos = start + 1
+                continue
+            if s[start:end] not in urls:
+                urls.append(s[start:end])
+            pos = end
+
     first = file_end(0)
     if first is None:
         return None
-    prefix = s[:s.rfind('/', 0, first) + 1]  # e.g. '../assets/img/cache/'; other URLs start with it too
-    if not prefix:
+    # Every candidate starts with some leading part of the first URL. Usually that's
+    # its whole folder ('../assets/img/cache/'), but some caches give each size its
+    # own folder (Statamic 3+ Glide: 'img/http/<name>/<md5>/<name>'), so try each
+    # folder level from the deepest up and keep whichever finds the most files.
+    prefixes = [s[:i + 1] for i in range(first - 1, -1, -1) if s[i] == '/']
+    if not prefixes:
         return None
-    parts, pos = [], 0
-    while True:
-        start = s.find(prefix, pos)
-        if start < 0:
-            break
-        end = file_end(start)
-        if end is None:
-            pos = start + 1
-            continue
-        url = s[start:end]
+    urls = max((urls_from(p) for p in prefixes), key=len)
+    parts = []
+    for url in urls:
         width = width_hint(os.path.basename(unquote(url.replace('&amp;', '&')))) \
             or image_width(local_path(root, base_dir, url))
         if not width:
             return None
         parts.append('%s %dw' % (url, width))
-        pos = end
     return ', '.join(parts)
 
 
@@ -206,6 +218,34 @@ def plan_renames(root):
         taken.add((d, new))
         renames.append((d, old, new))
     return renames
+
+
+def plan_comma_renames(root):
+    """{old name: new name} for every file or folder name containing a comma.
+    Browsers split srcset candidates on commas, so such an image never loads
+    from a srcset. 'image-may-22,-2026.png' -> 'image-may-22-2026.png'."""
+    names = set()
+    for d, dirs, files in os.walk(root):
+        names.update(n for n in dirs + files if ',' in n)
+    return {n: re.sub(r'-{2,}', '-', re.sub(r',\s*', '-', n)) for n in names}
+
+
+def apply_comma_renames(root, table):
+    for d, dirs, files in os.walk(root, topdown=False):
+        for n in dirs + files:
+            if n in table:
+                os.rename(os.path.join(d, n), os.path.join(d, table[n]))
+
+
+def rewrite_comma_refs(texts, table):
+    count = 0
+    for old in sorted(table, key=len, reverse=True):
+        for form in (old, old.replace(',', '%2C'), old.replace(',', '%2c')):
+            for p, t in texts.items():
+                if form in t:
+                    count += t.count(form)
+                    texts[p] = t.replace(form, table[old])
+    return count
 
 
 def rewrite_refs(texts, renames):
@@ -262,20 +302,32 @@ def report(root, texts, renames, old_domains):
          sorted(os.path.relpath(p, root) for p in final if not os.path.splitext(os.path.basename(p))[1])),
         ('files still containing %3F/%23', files_matching(texts, root, re.compile(r'%3F|%23', re.I))),
         ('files with analytics tags', files_matching(texts, root, re.compile(
-            r'googletagmanager\.com|google-analytics\.com|\bgtag\(|\bUA-\d{4,}-\d+'))),
+            r'googletagmanager\.com|google-analytics\.com|\bgtag\(|\bUA-\d{4,}-\d+|tinylytics\.app|plausible\.io'
+            r'|usefathom\.com|simpleanalytics|matomo|clarity\.ms|hotjar\.com|connect\.facebook\.net', re.I))),
+        ('files with <img> whose src is a page (an empty image field in the CMS)', files_matching(
+            texts, root, re.compile(r'<img\b[^>]*\ssrc\s*=\s*["\'][^"\']*\.html?["\']', re.I))),
+        ('files with HTML comments naming the environment, app URL or a commit', files_matching(
+            texts, root, re.compile(r'<!--(?:(?!-->).)*?\b(?:environment|app_url|APP_ENV|commit)\b', re.I | re.S))),
         ('files with <form> (forms won\'t work on a static host)', files_matching(texts, root, re.compile(r'<form\b', re.I))),
     ]
     for domain in old_domains:
         rx = re.compile(r'https?://(?:www\.)?' + re.escape(domain) + r'\b', re.I)
         checks.append(('files linking to %s' % domain, files_matching(texts, root, rx)))
     for label, items in checks:
-        print('  %-66s %d%s' % (label + ':', len(items), '  e.g. ' + ', '.join(items[:3]) if items else ''))
+        print('  %-72s %d%s' % (label + ':', len(items), '  e.g. ' + ', '.join(items[:3]) if items else ''))
     hosts = defaultdict(int)
     for t in texts.values():
         for h in re.findall(r'<script[^>]+src=["\'](?:https?:)?//([^/"\']+)', t, re.I):
             hosts[h] += 1
     if hosts:
         print('  external script hosts: ' + ', '.join('%s (%d)' % kv for kv in sorted(hosts.items(), key=lambda kv: -kv[1])))
+    frames = defaultdict(int)
+    for t in texts.values():
+        for h in re.findall(r'<iframe[^>]+src=["\'](?:https?:)?//([^/"\']+)', t, re.I):
+            frames[h] += 1
+    if frames:
+        print('  external iframe hosts (embedded forms keep submitting to the real service): '
+              + ', '.join('%s (%d)' % kv for kv in sorted(frames.items(), key=lambda kv: -kv[1])))
 
 
 def main():
@@ -295,7 +347,7 @@ def main():
     original = dict(texts)
 
     # 1. srcset first, while files still have their wget names
-    rebuilt, failed, dupes = [0], [], []
+    rebuilt, failed, dupes, singles = [0], [], [], []
     for p in texts:
         if os.path.splitext(p)[1].lower() not in HTML_EXTS:
             continue
@@ -312,10 +364,16 @@ def main():
             widths = re.findall(r'\s(\d+)w(?=,|$)', new)
             if len(set(widths)) < len(widths):
                 dupes.append(os.path.relpath(p, root))
+            if len(widths) == 1:
+                singles.append(os.path.relpath(p, root))
             return m.group(1) + m.group(2) + new + m.group(2)
         texts[p] = SRCSET_RX.sub(fix, texts[p])
     print('srcset: %d rebuilt, %d left for a human%s' % (
         rebuilt[0], len(failed), ('  e.g. ' + ', '.join(sorted(set(failed))[:3])) if failed else ''))
+    if singles:
+        print('  WARNING: %d rebuilt srcsets have a single candidate. Compare a few with the live page:'
+              ' a srcset that lost its other sizes leaves small, blurry images. e.g. %s' % (
+                  len(singles), ', '.join(sorted(set(singles))[:3])))
     if dupes:
         print('  %d rebuilt srcsets repeat a width (same-size images): check e.g. %s' % (
             len(dupes), ', '.join(sorted(set(dupes))[:3])))
@@ -330,6 +388,12 @@ def main():
         print('  ... and %d more' % (len(renames) - 8))
     if conflicts:
         print('  WARNING: same name renamed differently in different folders, check refs: %s' % ', '.join(sorted(conflicts)[:5]))
+
+    commas = plan_comma_renames(root)
+    ncomma = rewrite_comma_refs(texts, commas)
+    print('renamed: %d file/folder names with commas, %d references rewritten' % (len(commas), ncomma))
+    for old in sorted(commas)[:5]:
+        print('  %s -> %s' % (old, commas[old]))
 
     # 3. robots
     if args.noindex:
@@ -354,7 +418,8 @@ def main():
             changed += 1
     for d, old, new in renames:
         os.rename(os.path.join(d, old), os.path.join(d, new))
-    print('\nwrote %d files, renamed %d. Next: linkcheck.py %s' % (changed, len(renames), args.mirror))
+    apply_comma_renames(root, commas)
+    print('\nwrote %d files, renamed %d. Next: linkcheck.py %s' % (changed, len(renames) + len(commas), args.mirror))
 
 
 if __name__ == '__main__':
