@@ -10,7 +10,9 @@
      (skipped with --indexable, for a site that should stay in search engines).
   3. Checks every srcset candidate on the deployed pages: it must load, and its
      width descriptor must equal the image's real pixel width (JPEG/PNG/GIF/WebP).
-  4. With --live, compares each page's visible text with the live CMS page.
+  4. With --live, compares each page's visible text with the live CMS page, and
+     flags images whose srcset has one candidate where the live page has several
+     (a srcset repair that lost sizes: small, blurry images).
   5. Checks that unknown URLs and CMS internals (/site/users/, /index.php, …)
      return 404, and reports any HTML Netlify injects.
 
@@ -134,7 +136,7 @@ def main():
     with cf.ThreadPoolExecutor(min(args.jobs, 8)) as ex:
         results = list(ex.map(check_page, pages))
 
-    candidates, injected, text_diffs, robots_bad = {}, 0, [], []
+    candidates, injected, text_diffs, robots_bad, lost_sizes = {}, 0, [], [], []
     for rel, path, status, hdrs, body, live in results:
         if status != 200:
             robots_bad.append('%s: status %s' % (path, status))
@@ -151,6 +153,14 @@ def main():
                 bits = part.split()
                 if len(bits) == 2 and bits[1].endswith('w'):
                     candidates[urllib.parse.urljoin(base + path, bits[0])] = int(bits[1][:-1])
+        if live is not None and live[0] == 200:
+            mine = [len([x for x in m.group(2).split(',') if x.strip()]) for m in SRCSET_RX.finditer(text)]
+            theirs = [len(re.findall(r'\s\d+w\s*(?:,|$)', m.group(2).strip()))
+                      for m in SRCSET_RX.finditer(live[2].decode('utf-8', 'replace'))]
+            if len(mine) == len(theirs):
+                n = sum(1 for a, b in zip(mine, theirs) if a == 1 and b > 1)
+                if n:
+                    lost_sizes.append('%s: %d of %d srcsets have 1 candidate, live has more' % (path, n, len(mine)))
         if live is not None:
             a, b = visible_text(body), visible_text(live[2])
             if a != b:
@@ -170,6 +180,10 @@ def main():
               % (len(results) - len(text_diffs), len(text_diffs)))
         for d in text_diffs[:20]:
             print('  ' + d)
+        print('srcset sizes vs live: %d pages lost sizes' % len(lost_sizes))
+        for d in lost_sizes[:20]:
+            print('  ' + d)
+        fails += len(lost_sizes)
 
     def check_candidate(item):
         url, w = item

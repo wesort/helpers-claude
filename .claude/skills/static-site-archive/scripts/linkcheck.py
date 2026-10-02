@@ -6,7 +6,8 @@
 Scans href/src/poster/data-src/srcset in HTML, and url() in CSS files, <style>
 blocks and style="" attributes. Exits 1 if any reference is missing, or points
 at a file whose name contains '?' or '#' (fine locally, but Netlify won't
-deploy it). Things only JavaScript or feeds reference aren't checked: test
+deploy it). Clean URLs ('/about' for about.html) count as found, as Netlify
+serves them. Things only JavaScript or feeds reference aren't checked: test
 those by hand.
 """
 import argparse
@@ -64,6 +65,8 @@ def main():
                 full = os.path.normpath(os.path.join(root if path.startswith('/') else d, path.lstrip('/')))
                 if os.path.isdir(full):
                     full = os.path.join(full, 'index.html')
+                elif not os.path.isfile(full) and os.path.isfile(full + '.html'):
+                    full += '.html'  # clean URL: Netlify serves /about from about.html
                 rel = os.path.relpath(full, root)
                 if not os.path.isfile(full):
                     missing[rel].add(os.path.relpath(p, root))
