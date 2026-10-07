@@ -103,7 +103,7 @@ Report findings to the user as a short list before changing anything.
 
 2. **Uncommitted changes and auto-commits.**
    - `git status --short`. **ASK D4** before committing anything that was already there; show the diff.
-   - `crontab -l`. A backup script running `git add .` on a schedule will silently commit, or revert, your work. **ASK** before disabling it.
+   - `crontab -l`, **and** the system crontab (`grep -n DOMAIN /etc/crontab /etc/cron.d/*`). Hosting panels' schedulers often write jobs there, as another user, where `crontab -l` doesn't show them. A backup script running `git add .` on a schedule will silently commit, or revert, your work, and may push it. **ASK** before disabling it; until it's gone, keep the production working tree clean.
    - `git rev-parse --abbrev-ref HEAD`: Netlify must deploy this branch (D3).
 
 3. **`.gitignore`.** Check the mirror folder isn't ignored: `git check-ignore -v MIRROR/x.html`. A rule like `static/` matches a folder of that name at any depth, and some CMSs write their page cache to `static/`, which is why `archive/` is the default.
@@ -139,6 +139,23 @@ Report findings to the user as a short list before changing anything.
 
 ## 2B. Server-rendered: crawl with wget
 
+### Where to build: a separate clone (recommended for big or live sites)
+
+Crawling production means changing settings on the live site, clearing its caches, staying under its PHP request timeout and reverting everything afterwards. For a large or image-heavy site, or one that stays live, build from a separate clone of the repo instead. One listing page with ~700 thumbnails took over 4 minutes to render the first time, far beyond a typical 60–90 s PHP-FPM limit.
+
+1. **Clone the repo elsewhere on the server.** If a hosting panel creates it, prefer a plain git checkout. Zero-downtime ("releases/" + `current` symlink) setups can redeploy over your work, and may store a token in the remote URL, so mask URLs when printing them (`git remote -v | sed -E 's#//[^@]*@#//***@#'`). Panel clones may also be shallow, so push tags on older commits from a full clone.
+2. **Give it its own `.env`:** production `APP_ENV` (so production-only snippets render), `SITE_URL=http://127.0.0.1:8081`, the content cache always updating, and static page caching off. Create any ignored storage folders the CMS needs.
+3. **Serve it with PHP's built-in server**, which has no request timeout:
+   ```
+   php -d max_execution_time=0 -d memory_limit=2048M -S 127.0.0.1:8081 statamic/server.php
+   ```
+   - For Statamic v2, `statamic/server.php` is the router. It serves existing files (assets, theme, generated images) directly.
+   - Each `php -S` handles one request at a time. To warm faster, run a few on other ports and spread the URLs with `xargs -P`.
+   - Stop them with `pkill -f '[s]tatamic/server.php'`. The bracket stops the pattern matching the shell that runs `pkill`, which would otherwise be killed too.
+4. **Make template and settings changes directly in the clone** (removed analytics, simplified `srcset`s, route extensions, cached image mode) and commit them, instead of temporarily editing production. Seed from the clone's own sitemap.
+5. **After the crawl,** rewrite every remaining `http://127.0.0.1:8081` (`og:url`, `og:image`, `itemprop="url"`, sitemap `<loc>`s) to `https://DOMAIN`. Do it after copying the `og:image` files (step 3.5 below), whose paths come from those same URLs.
+6. **A web server pointed at the clone's `MIRROR/` makes a handy preview.** Without a clean-URL rule, though, `verify_deploy.py` reports extensionless pages as 404 there. Its file checks and `--live` comparison are still valid. Re-run the full check on Netlify.
+
 ### Prepare
 
 1. Write the seed URLs to `urls.txt`, one per line, from:
@@ -151,7 +168,7 @@ Report findings to the user as a short list before changing anything.
    **Statamic v2 (Glide):**
    1. Set `image_manipulation_cached: true` in `site/settings/assets.yaml`. URLs become `/img/containers/<container>/<path>/<image.jpg>/<md5>.jpg`.
    2. Clear the caches: `php please clear:stache`, `clear:cache`, `clear:static`. The static page cache holds HTML with the old URLs, and must be empty before the crawl if the web server serves it directly.
-   3. **Warm every page once before wget runs:** `curl -s -o /dev/null --max-time 300 -w '%{http_code} %{time_total}s\n' URL`. Images are generated synchronously during the first render, which can take longer than PHP's request timeout on image-heavy pages. Re-request any page that fails.
+   3. **Warm every page once before wget runs** (entries first, listing pages last): `curl -s -o /dev/null --max-time 300 -w '%{http_code} %{time_total}s\n' URL`. Images are generated synchronously during the first render, which can take longer than PHP's request timeout on image-heavy pages. Re-request any page that fails.
    4. Crawl.
    5. **Before deleting the generated `img/` folder, copy in the images wget skipped.** wget doesn't follow `<meta>` tags, so social-card images (`og:image`, `twitter:image`) were generated during warming but never fetched. Copy every `content="https://DOMAIN/img/…"` target into `MIRROR/img/`, removing any `/./` in those paths. Then check that every absolute `https://DOMAIN/…` URL in the mirror resolves to a file. The md5 filenames are deterministic, so the steps can be repeated if needed.
    6. **Revert:** restore `assets.yaml`, rename drafts back, **ASK** before `rm -rf img`, clear the caches again, and check the live site renders its original image URLs.
@@ -206,7 +223,20 @@ Then work through the report:
   - Links to redirect paths stay absolute, because the crawl rejected them, and `linkcheck.py` reports them missing. Point each at its final page, so internal links don't depend on redirects. The Netlify redirects still cover links from outside.
 - **Extensionless files** (e.g. `feed`): give each a `Content-Type` header in `netlify.toml`, or better, add the extension in the CMS and re-crawl that URL.
 - **Forms, search, login. ASK D8**, then remove or replace them.
-- **404 page.** Fetch the site's own (`curl https://DOMAIN/this-page-does-not-exist`), make every URL in it root-relative (Netlify serves it at any depth, so relative URLs break), match any renamed CSS filename, set the robots tag, and save it as `MIRROR/404.html`.
+- **404 page.** Fetch the site's own (`curl https://DOMAIN/this-page-does-not-exist`), make every URL in it root-relative (Netlify serves it at any depth, so relative URLs break), match any renamed CSS filename, set the robots tag, and save it as `MIRROR/404.html`. Point its nav links at `/x.html` rather than `/x`: when a folder `x/` also exists, `/x` resolves as that folder, and `linkcheck.py` flags it.
+- **Live (indexable) sites** (D1):
+  - Keep `robots.txt` crawlable, with `Sitemap:` pointing at the static file.
+  - Check `.gitignore` doesn't drop `MIRROR/robots.txt`. A bare `robots.txt` pattern matches at any depth, so add `!/MIRROR/robots.txt`.
+  - Add a 301 for any URL that changed (e.g. `/sitemap` → `/sitemap.xml`).
+  - Set only the 404 page to `noindex`.
+  - Write a short guide in the repo for adding content to the static HTML later: which files a new entry touches (its page, listing and tag pages, sitemap, image sizes). Also keep the CMS content folder in step, ready for a future rebuild.
+- **Fixing an image crop after the crawl** (e.g. a wrong focal point; Statamic v2 stores it as `focus: x-y` in percent in `site/content/assets/<container>.yaml`, where `50-0` is top-centre):
+  1. Change the focal point in the build copy.
+  2. Re-render only the pages that use the image.
+  3. Map old to new generated filenames by their position in each page.
+  4. Copy the new crops into the mirror, rewrite the references, and remove the old crops.
+
+  Cropped sizes (thumbnails, `og:image`) change; scale-only sizes don't.
 - **Content the crawl couldn't reach.** Prefer publishing it temporarily and crawling it. Otherwise build each page by hand from an existing page of the same type, and generate its images to match the CMS's sizes. If the CMS strips colour profiles, convert wide-gamut originals to sRGB first: `convert in.jpg -profile sRGB.icc -resize '1200x1000>' -strip -quality 80 out.jpg`.
 - **JavaScript features.** `grep -rhoE "<script[^>]*>" archive | sort | uniq -c` shows what's there. Serve locally (`cd archive && python3 -m http.server 8000`) and ask the user to click through anything script-driven: galleries, sliders, video embeds.
 - **`robots.txt`.** For an archive, don't ship one that disallows crawling: crawlers must be able to fetch a page to see its `noindex`.
@@ -264,6 +294,9 @@ Then work through the report:
 3. **User:** at the DNS provider, point the domain at Netlify. For a subdomain, replace the `A` record with a `CNAME` to `SITE.netlify.app`. For an apex domain, follow Netlify's instructions for that provider. Give them the exact record to enter.
 4. **Wait for the certificate, then verify on the domain.**
    - Check the authoritative answer first (`dig DOMAIN @<authoritative-ns>`), then a public resolver (`@1.1.1.1`). Resolvers that cached the old record wait out its TTL, and the machine you're on may be one of them.
+   - **If the user still sees the old site**, ask for DevTools → Network → the document request → Remote Address, and the `server` response header.
+     - On IPv6-only networks with DNS64/NAT64, the address looks like `64:ff9b::c000:201`; the last 32 bits are the IPv4 address in hex (here `192.0.2.1`). If it's the old server, the provider's resolver still holds the old A record.
+     - The user can't flush that resolver; it expires with the old TTL. Point them at `SITE.netlify.app` meanwhile.
    - Until Netlify issues the certificate, HTTPS on the domain fails with a certificate name mismatch. Poll it: `echo | openssl s_client -connect NETLIFY_IP:443 -servername DOMAIN 2>/dev/null | openssl x509 -noout -ext subjectAltName`, with `NETLIFY_IP` from `dig +short SITE.netlify.app @1.1.1.1`.
    - While this machine still resolves the old address, use `curl --resolve DOMAIN:443:NETLIFY_IP`, and run `verify_deploy.py` under a shim that sends the domain to Netlify (SNI and the Host header stay `DOMAIN`):
 
@@ -293,6 +326,11 @@ Then work through the report:
    - After the swap, the old site is still reachable from the server itself with `curl --resolve DOMAIN:443:127.0.0.1 https://DOMAIN/`.
    - wget has no `--resolve`. A later re-crawl needs a hosts entry (root), a temporary extra hostname on the old site, or DNS pointed back.
 3. **User:** delete the site from the server or hosting panel. Afterwards, confirm the server no longer answers for the hostname.
+
+**If a push fails with `remote: Internal Server Error`** (a GitHub-side 500 with a request ID) and `git ls-remote origin BRANCH` shows the branch hasn't moved, nothing is lost, but keep every clone holding unpushed commits.
+- Check https://www.githubstatus.com.
+- Fetch the commit into another, full clone without checking it out (`git fetch /path/to/build-clone main:refs/remotes/build/main`) and push from there (`git push origin build/main:main`).
+- If a tag-only push also fails, the whole repo is refusing ref updates. Retry later; it may still be processing a large earlier push. If it persists, contact GitHub Support with the request IDs.
 
 ## 7. Document in the repo
 
