@@ -1,7 +1,7 @@
 ---
 name: statamic-upgrade-readiness
 description: Read-only audit of a Statamic project and its server against the upgrade target (Laravel 13 + Statamic 6, PHP 8.3+ floor, 8.5 ideal) — PHP and OS status, Composer blockers, S6 landmines, licence and hygiene checks — ending in a route decision (upgrade in place vs rebuild). No installs, no sudo, never prints secrets.
-allowed-tools: Read, Glob, Grep, Bash(php -v*), Bash(ls *), Bash(uname *), Bash(cat /etc/os-release), Bash(composer outdated*), Bash(composer show*), Bash(composer audit*), Bash(composer why-not*), Bash(composer check-platform-reqs*), Bash(npm outdated*), Bash(node -v), Bash(git log*), Bash(git status*), Bash(git branch*), Bash(git check-ignore*), Bash(git ls-files*), Bash(git config --global user.*), Bash(cmp *)
+allowed-tools: Read, Glob, Grep, Bash(php -v*), Bash(ls *), Bash(uname *), Bash(cat /etc/os-release), Bash(composer outdated*), Bash(composer show*), Bash(composer audit*), Bash(composer why-not*), Bash(composer check-platform-reqs*), Bash(npm outdated*), Bash(npm -v), Bash(npm config get *), Bash(node -v), Bash(git log*), Bash(git status*), Bash(git branch*), Bash(git check-ignore*), Bash(git ls-files*), Bash(git config --global user.*), Bash(cmp *)
 ---
 
 # Statamic upgrade readiness
@@ -113,6 +113,7 @@ If you're sitting above several site directories rather than inside one, enumera
 - `npm outdated` — counts, then notable ones. **Treat its output as unreliable:** in practice it has reported a wrong "latest" and omitted a direct dependency that was two majors behind. Cross-check against the real sources:
   - **`package.json` constraint ceilings** — the npm equivalent of the composer.json check, and the one v1 of this prompt was missing. A `"tailwindcss": "^3.4.3"` is a ceiling in exactly the way `"laravel/framework": "^11"` is. Name any you find.
   - **Resolved versions from `package-lock.json`** for what's actually installed.
+- **npm release-age cooldown.** Check for `min-release-age` in the project's `.npmrc` (`npm config get min-release-age` shows what applies) and that `npm -v` is at least 11.10, which it needs. The estate convention is `min-release-age=7` (see Estate conventions). If it's missing, the plan must add it **before** the first `npm install` or `npm update` of the upgrade, not after: without it, the new lock picks up versions published days earlier. On one upgrade, a Vite 8 lock resolved without the cooldown held 20 versions under 7 days old, mostly the bundler's platform builds. If a lock was already resolved without it, the plan re-resolves under the cooldown (`rm -rf node_modules package-lock.json && npm install`) and checks every locked version's publish date against the registry's `time` field. Report which shape this site has; adding the file is `routine`.
 - **Vite / laravel-vite-plugin majors.** Target is Vite 8 + plugin 3 (+ Tailwind 4.3). From Vite 7 / plugin 2 this was a constraint bump with an unchanged manifest on peascod — `routine`. Note any leftover `@vitejs/plugin-vue2` import in `vite.config.js` (dead once CP Vue is gone).
 - **Tailwind major version.** Statamic 6 moves to Tailwind v4; if this project is on v3 that's a real migration cost, not a version bump. On a site with no other hidden costs this is often the single largest manual item — size it accordingly.
 - **Custom Vue in the control panel.** Statamic 6 moves the CP to Vue 3 + Inertia 2. Check `resources/js/cp.js` and any components directory. **Distinguish real components from the commented-out boilerplate Statamic ships** — the stock `cp.js` is entirely commented example code, and reading it as custom Vue would invent a cost that isn't there. If it's all boilerplate, say so: it removes a cost the version table implies.
@@ -191,6 +192,7 @@ Standing facts about how we run these sites. Apply them when sizing work and whe
 - **`STATAMIC_STACHE_WATCHER`** is `true` on development, `false` in production. `APP_DEBUG=false` on both; `LOG_LEVEL=warning` in production.
 - **Redis and queues are not assumed.** Peascod runs `QUEUE_CONNECTION=sync`, `CACHE_STORE=file`, Redis installed but deliberately inactive; tom-hammick uses a Redis queue. Report which this site is — it changes the deploy script (`$RESTART_QUEUES()`, `static:warm --queue`) — and don't recommend Redis.
 - **Email** is intentionally unconfigured on these boxes.
+- **npm installs honour a 7-day release-age cooldown:** `.npmrc` in the project root with `min-release-age=7`, so npm won't install any version published in the last 7 days (a defence against freshly published malicious releases). Needs npm 11.10+, which works on Node 22 with a current npm. Override a single install with `npm ci --min-release-age=0` and say why in the commit.
 - **nginx** carries the security headers with `always`, repeated inside the hashed-asset `location` (`^/(build|vendor/statamic/cp/build)/` → `expires 1y`, `public, immutable`), other static files `expires 1y` with no `add_header`, and `application/json` in `gzip_types`. Applied through the Forge UI per site, verified with `sudo nginx -t` — not edited on disk. Each edit is a separate `# estate:` block; the reference is the "Changes to make to Forge's generated file" section of a finished site's `docs/forge-nginx.md` (hca, Red + White). Copy from there rather than re-deriving: a first draft written from scratch drifted from it.
 - **Sitemap** is served at `/sitemap.xml` with `/sitemap` 301ing to it, `<loc>{{ permalink }}</loc>`, hidden entries excluded.
 - **`APP_KEY` / licence key in `docs/*.env`** is accepted practice on private repos (peascod, confirmed with the client). Record presence as known; don't re-raise it as a finding unless repo access has widened.
@@ -239,6 +241,7 @@ Default to replying inline only — no report file, no changes proposed. **If th
    - **Judge v6 CP speed with the Stache watcher off.** With it on, every Inertia request re-scans content. A 404 for `fonts/inter/intervariable-italic.woff2` in the CP console is an upstream packaging bug (6.34), not a site fault.
    - **Untracking `public/vendor` bites on the next branch switch** on a plain git checkout: moving from a commit that tracks the files past the one that removes them deletes them, and the CP 500s with `Vite manifest not found`. Run `php artisan statamic:install`.
    - **PHP 8.5 last**, after Statamic 6 is live, and only once the 8.5 install matches the active version's extensions.
+   - **Add the npm cooldown before installing anything.** `.npmrc` with `min-release-age=7` goes in before the first `npm install`; then check the new lock has no version under 7 days old.
 8. **Email:** one line.
 9. **Couldn't confirm:** what was skipped (sudo, no server access, sibling sites) and what's unknown.
 
@@ -462,3 +465,14 @@ From the hca upgrade (23–30 Sep 2026): a site already on Laravel 12 and PHP 8.
 14. **Third reference anchor** (hca) showing a PHP 8.5 / Node 24 finish and the route order.
 
 **Estate conventions expanded** — where the deploy script and scheduled jobs actually live, `cp:lock` behaviour and `$FORGE_SITE_PATH`, no `CP_ENABLED=false` for cutovers, and pointers to the autobackup, deploy and nginx templates so they're copied rather than re-derived.
+
+---
+
+## What changed in v5
+
+**New checks**
+
+1. **npm release-age cooldown:** whether the project's `.npmrc` sets `min-release-age`, and npm 11.10+ to support it. An upgrade that installed Vite 8 without it took 20 versions under 7 days old into the lock, so the plan now adds the file before the first install and re-resolves a lock taken without it.
+
+**Estate conventions expanded** with the 7-day cooldown, and **one more trap** for the plan: add the cooldown before installing anything.
+
