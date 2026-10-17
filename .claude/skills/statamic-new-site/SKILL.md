@@ -222,9 +222,10 @@ Write `docs/deploy.md` from the reference skeleton, filled in for this site: met
 5. `$FORGE_PHP artisan optimize`.
 6. `$FORGE_PHP please stache:warm`, then `search:update --all` if D7.
 7. `$ACTIVATE_RELEASE()`.
-8. Reload PHP-FPM (see the reference; **why:** PHP's realpath cache otherwise serves the old release's paths for a couple of minutes).
-9. `$FORGE_PHP please cp:unlock`.
-10. Static caching (D6): `static:clear`, then `static:warm`.
+8. `$FORGE_PHP please cp:unlock`.
+9. Static caching (D6): `static:clear`, then `static:warm`.
+
+**No PHP-FPM reload.** Forge's nginx passes PHP the resolved path (`SCRIPT_FILENAME $realpath_root...` in `fastcgi_params`), so each release reaches PHP at its own path and OPcache and the realpath cache compile it fresh. Check that `fastcgi_params` still does this on the new server; if a site's nginx passes the `current` symlink path instead, a reload would be needed.
 
 The **operator** runs `php please cp:lock` and then `./autobackup.sh` in `current/` before deploying, so no edit is lost. Say so prominently in `docs/deploy.md`.
 
