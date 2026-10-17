@@ -61,9 +61,8 @@ $FORGE_PHP please search:update --all    # only if the site uses search
 
 $ACTIVATE_RELEASE()
 
-# Reload PHP-FPM so its realpath cache doesn't keep serving the old release's paths
-( flock -w 10 9 || exit 1
-    echo 'Reloading PHP FPM...'; sudo -S service $FORGE_PHP_FPM reload ) 9>/tmp/fpmlock
+# No PHP-FPM reload: nginx passes PHP the resolved release path ($realpath_root),
+# so each release is compiled fresh by OPcache
 
 $FORGE_PHP please cp:unlock
 
