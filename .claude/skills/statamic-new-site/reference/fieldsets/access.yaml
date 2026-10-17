@@ -1,0 +1,25 @@
+title: Access
+fields:
+  -
+    handle: access
+    field:
+      options:
+        -
+          key: 1
+          value: 'Super users (1)'
+        -
+          key: 10
+          value: 'Logged in authors only (10)'
+        -
+          key: 50
+          value: 'Public, but not listed and hidden from robots (50)'
+        -
+          key: 80
+          value: 'Public, but not listed (80)'
+        -
+          key: 100
+          value: 'Public (100)'
+      max_items: 1
+      type: select
+      display: Access
+      default: 100

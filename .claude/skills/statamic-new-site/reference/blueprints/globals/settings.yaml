@@ -1,0 +1,47 @@
+tabs:
+  main:
+    display: Main
+    sections:
+      -
+        fields:
+          -
+            handle: code_injection_in_head
+            field:
+              type: replicator
+              display: 'Code injection in head'
+              instructions: 'Places contents into `<head>` of the site.'
+              sets:
+                new_set_group:
+                  display: 'New Set Group'
+                  sets:
+                    new_set:
+                      display: 'New Set'
+                      fields:
+                        -
+                          handle: code
+                          field:
+                            type: code
+                            display: Code
+          -
+            handle: code_injection_before_closing_body
+            field:
+              type: replicator
+              display: 'Code injection before closing body'
+              instructions: 'Places contents before `</body>` of the site.'
+              sets:
+                new_set_group:
+                  display: 'New Set Group'
+                  sets:
+                    new_set:
+                      display: 'New Set'
+                      fields:
+                        -
+                          handle: production_only
+                          field:
+                            type: toggle
+                            display: 'Production only'
+                        -
+                          handle: code
+                          field:
+                            type: code
+                            display: Code

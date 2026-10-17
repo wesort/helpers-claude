@@ -1,0 +1,11 @@
+{{ xml_header }}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{{# Indexable entries only, matching the robots meta in head/seo #}}
+{{ collection from="*" access:gte="80" sort="sitemap_priority:desc|title:asc" }}
+  <url>
+    <loc>{{ permalink }}</loc>
+    <lastmod>{{ last_modified format="Y-m-d" }}</lastmod>
+    <priority>{{ sitemap_priority ?? '0.3' }}</priority>
+  </url>
+{{ /collection }}
+</urlset>

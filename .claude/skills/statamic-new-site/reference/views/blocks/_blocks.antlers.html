@@ -1,0 +1,9 @@
+<!-- Start blocks/_blocks -->
+{{ if blocks }}
+    <div class="prose">
+        {{ blocks }}
+            {{ partial src="blocks/{type}" }}
+        {{ /blocks }}
+    </div>
+{{ /if }}
+<!-- End blocks/_blocks -->

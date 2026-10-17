@@ -1,0 +1,85 @@
+tabs:
+  main:
+    display: Main
+    sections:
+      -
+        fields:
+          -
+            handle: message
+            field:
+              buttons:
+                - anchor
+                - bold
+                - strikethrough
+                - italic
+                - subscript
+                - superscript
+                - unorderedlist
+                - orderedlist
+                - horizontalrule
+                - removeformat
+              smart_typography: true
+              remove_empty_nodes: true
+              type: bard
+              display: Message
+              instructions: 'Text shown to visitors who reach a 404 Error. eg: _Page not found_'
+              placeholder: 'The URL you entered, or clicked, is either no longer with us or incorrect. Sorry about that.'
+          -
+            handle: rules
+            field:
+              add_row: 'Add rule'
+              type: grid
+              display: Rules
+              fields:
+                -
+                  handle: type
+                  field:
+                    options:
+                      -
+                        key: int_301
+                        value: 'Internal 301'
+                      -
+                        key: int_302
+                        value: 'Internal 302'
+                      -
+                        key: ext_301
+                        value: 'External 301'
+                      -
+                        key: ext_302
+                        value: 'External 302'
+                      -
+                        key: disabled
+                        value: Disabled
+                    max_items: 1
+                    default: int_302
+                    type: select
+                    display: Type
+                    width: 25
+                -
+                  handle: source
+                  field:
+                    type: text
+                    display: Source
+                    instructions: 'start with a `/`'
+                    width: 25
+                    validate:
+                      - required
+                    instructions_position: below
+                -
+                  handle: internal_destination
+                  field:
+                    max_items: 1
+                    create: false
+                    type: entries
+                    display: 'Internal destination'
+                    width: 25
+                    unless:
+                      type: 'contains ext'
+                -
+                  handle: external_destination
+                  field:
+                    type: text
+                    display: 'External destination'
+                    width: 25
+                    unless:
+                      type: 'contains int'

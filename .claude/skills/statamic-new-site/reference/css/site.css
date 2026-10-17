@@ -1,0 +1,94 @@
+@charset "utf-8";
+
+@import "tailwindcss";
+@source "../views";
+@source "../../content";
+@source "../../vendor/wesort/statamic-dev-panel/resources/views";
+
+@view-transition {
+    navigation: auto;
+}
+
+@theme {
+    --breakpoint-xs: 26rem;
+    --breakpoint-3xl: 122rem;
+
+    --color-primary: var(--color-zinc-900);
+    --color-background: var(--color-white);
+}
+
+@layer base {
+    .js .no-js-message, .print-only { @apply hidden; }
+    .no-js .no-js-message { @apply block text-center px-4 py-2; }
+
+    iframe {
+        @apply w-full;
+    }
+    hr {
+        @apply border-current opacity-70;
+    }
+}
+
+/* Site grid: use the three together, eg <div class="grid-site-12 px-site max-w-site mx-auto">,
+   with regions as col-span-* children. Keep the dev panel's grids.container_class in step. */
+@layer components {
+    .max-w-site {
+        max-width: 80rem;
+    }
+    .grid-site-12 {
+        @apply w-full grid grid-cols-12 gap-4 lg:gap-8;
+    }
+    .px-site {
+        @apply px-4 lg:px-8;
+    }
+}
+
+@layer components {
+    main a:not(.heading) {
+        @apply underline underline-offset-2 hover:text-current/50;
+    }
+    main a.heading {
+        @apply underline decoration-1 decoration-transparent hover:decoration-current underline-offset-2;
+    }
+    code {
+        @apply bg-current/5 px-1 rounded-sm text-[0.85em];
+    }
+    .raw-data {
+        @apply bg-current/5 p-2 rounded-sm font-mono text-[0.8em] my-4;
+    }
+}
+
+@layer components {
+    .prose {
+        p {
+            @apply text-pretty;
+        }
+        p:not(:last-child) {
+            @apply mb-4;
+        }
+        ul {
+            @apply list-disc pl-4;
+        }
+        ol {
+            @apply list-decimal pl-4;
+        }
+        li:not(:last-child) {
+            @apply mb-2;
+        }
+        h1, h2, h3, h4 {
+            @apply text-balance;
+        }
+        h2, h3, h4:not(:first-child) {
+            @apply mt-4;
+        }
+        h2 {
+            @apply text-2xl;
+        }
+        h3 {
+            @apply text-xl;
+        }
+        hr {
+            @apply border-none bg-current/60 h-px my-4;
+        }
+    }
+}

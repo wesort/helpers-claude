@@ -1,0 +1,18 @@
+<title>{{ if config:app:env == "dev" }}*{{ /if }}{{ if segment_1 }}{{ title ?? view:title }} | {{ site:name }}{{ else }}{{ site:name }}{{ /if }}</title>
+        {{ if access >= 80 && config:app:env == "production" }}
+            <meta name="robots" content="INDEX, FOLLOW">
+        {{ else }}
+            <meta name="robots" content="NOINDEX, NOFOLLOW">
+        {{ /if }}
+        <link rel="canonical" href="{{ permalink }}">
+        <meta property="og:url" content="{{ permalink }}">
+        <meta property="og:locale" content="en_GB">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="{{ site:name }}">
+
+        <meta name="description" content="{{ meta_description | markdown | strip_tags | entities }}">
+        <meta property="og:description" content="{{ meta_description | markdown | strip_tags | entities }}">
+        {{ primary_image }}
+            <meta property="og:image" content="{{ config:app:url }}{{ glide src="{url}" width="1200" height="628" q="80" fit="crop_focal" }}">
+            {{ if alt }}<meta property="og:image:alt" content="{{ alt | ensure_right('.') }}">{{ /if }}
+        {{ /primary_image }}

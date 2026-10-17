@@ -1,0 +1,25 @@
+---
+title: 'Page not found (404 error)'
+---
+<!-- Start errors/404 -->
+{{# Redirect rules from the redirects global are checked first #}}
+{{ redirects:rules }}
+    {{ destination = {internal_destination:url} ?? {external_destination} }}
+
+    {{ if current_uri == source }}
+        {{ dev_panel:raw_data class="raw-data" }}
+            <div>type: <code>{{ type }}</code></div>
+            <div>source: <code>{{ source }}</code></div>
+            <div>destination: <code>{{ destination ?? '--' }}</code></div>
+        {{ /dev_panel:raw_data }}
+
+        {{ if type != "disabled" }}
+            {{ redirect to="{destination}" response="{type | last(3)}" }}
+        {{ /if }}
+    {{ /if }}
+{{ /redirects:rules }}
+
+<h1>{{ view:title }}</h1>
+<p>Address: <code>{{ current_uri }}</code></p>
+{{ partial:errors/redirects_message }}
+<!-- End errors/404 -->
