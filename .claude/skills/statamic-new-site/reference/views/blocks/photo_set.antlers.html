@@ -1,0 +1,13 @@
+<!-- Start blocks/{{ type }} -->
+<figure class="{{ type }}_set">
+    {{ partial:helpers/click_through_start }}
+
+    {{ partial:helpers/photo_asset }}
+
+    {{ partial:helpers/click_through_end }}
+
+    {{ if caption }}
+        <figcaption class="mt-1">{{ caption | widont }}</figcaption>
+    {{ /if }}
+</figure>
+<!-- End blocks/{{ type }} -->

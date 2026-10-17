@@ -1,0 +1,37 @@
+<!-- Start helpers/photo_asset -->
+{{# Pass sizes (default 100vw), loading (default lazy) and class #}}
+{{ photo_asset }}
+    {{ if extension == "svg" }}
+        <div class="w-full {{ class }}">
+            {{ url | output }}
+        </div>
+    {{ elseif extension == "gif" }}
+        <img {{ partial:helpers/alt }}
+            loading="{{ loading ?? "lazy" }}"
+            width="{{ width }}"
+            height="{{ height }}"
+            class="w-full {{ class }}"
+            src="{{ url }}"
+        >
+    {{ else }}
+        {{# WebP for browsers that support it, the image's own format for the rest #}}
+        {{ fallback_fm = extension == 'png' ? 'png' : 'jpg' }}
+        <picture class="contents">
+            <source
+                type="image/webp"
+                srcset="{{ partial:helpers/photo_srcset fm="webp" }}"
+                sizes="{{ sizes ?? "100vw" }}"
+            >
+            <img {{ partial:helpers/alt }}
+                loading="{{ loading ?? "lazy" }}"
+                class="w-full {{ class }}"
+                width="{{ width }}"
+                height="{{ height }}"
+                src="{{ glide src="{url}" width="1250" q="80" fit="max" fm="{fallback_fm}" }}"
+                srcset="{{ partial:helpers/photo_srcset :fm="fallback_fm" }}"
+                sizes="{{ sizes ?? "100vw" }}"
+            >
+        </picture>
+    {{ /if }}
+{{ /photo_asset }}
+<!-- End helpers/photo_asset -->

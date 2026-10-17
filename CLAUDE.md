@@ -17,8 +17,9 @@ files — no build tools, no runtime dependencies.
 
 - YAML frontmatter is required. Include `allowed-tools` and
   `description` at minimum.
-- Commands must be portable — no hardcoded project paths, no
-  framework or language assumptions.
+- Commands must be portable — no hardcoded project paths, and
+  nothing client-specific. A command or skill may target one stack
+  (e.g. Statamic) when its name and description say so.
 - Use `$ARGUMENTS` for user input. Document expected arguments in
   an `## Arguments` section.
 - Structure: single `# Title`, then `## Sections` for workflow
@@ -49,7 +50,7 @@ Follow Chris Beams rules:
 ## What Not to Do
 
 - No project-specific commands — commands here must work in any
-  project.
-- No framework or language dependencies — commands are plain
-  markdown consumed by Claude Code.
+  project of the stack they name.
+- No runtime dependencies — commands are plain markdown consumed
+  by Claude Code.
 - No auto-sync mechanisms — loose coupling is enforced by design.

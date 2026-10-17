@@ -1,0 +1,15 @@
+{{#
+    srcset for a photo at its own proportions, at quality 80, in the format
+    given as fm (webp, png or jpg). Used inside an asset loop, for its url and width.
+
+    Width and quality are set here, not by Glide presets: with a format or fit
+    also given, Glide drops the preset. Widths larger than the source are left
+    out, and the source's own width (capped at 3000) is always offered.
+#}}
+{{ largest = width > 3000 ? 3000 : width }}
+{{ if width > 360 }}{{ glide src="{url}" width="360" q="80" fit="max" fm="{fm}" }} 360w, {{ /if }}
+{{ if width > 600 }}{{ glide src="{url}" width="600" q="80" fit="max" fm="{fm}" }} 600w, {{ /if }}
+{{ if width > 900 }}{{ glide src="{url}" width="900" q="80" fit="max" fm="{fm}" }} 900w, {{ /if }}
+{{ if width > 1250 }}{{ glide src="{url}" width="1250" q="80" fit="max" fm="{fm}" }} 1250w, {{ /if }}
+{{ if width > 1800 }}{{ glide src="{url}" width="1800" q="80" fit="max" fm="{fm}" }} 1800w, {{ /if }}
+{{ glide src="{url}" :width="largest" q="80" fit="max" fm="{fm}" }} {{ largest }}w

@@ -1,0 +1,17 @@
+title: 'Caption simple'
+fields:
+  -
+    handle: caption
+    field:
+      buttons:
+        - anchor
+        - bold
+        - italic
+        - strikethrough
+        - superscript
+        - subscript
+        - removeformat
+      smart_typography: true
+      remove_empty_nodes: true
+      type: bard
+      display: Caption

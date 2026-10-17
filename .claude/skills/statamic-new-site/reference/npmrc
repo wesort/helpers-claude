@@ -1,0 +1,6 @@
+# Dependency install policy.
+# 7-day release-age cooldown: npm refuses to install any version published
+# less than 7 days ago. Mitigates supply-chain attacks via freshly-published
+# malicious releases. Requires npm >= 11.10.0. Override a single install
+# with `npm ci --min-release-age=0` and record why in the commit.
+min-release-age=7

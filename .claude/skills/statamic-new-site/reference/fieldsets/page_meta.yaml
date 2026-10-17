@@ -1,0 +1,40 @@
+title: 'Page meta'
+fields:
+  -
+    handle: visually_hide_h1
+    field:
+      type: toggle
+      display: 'Visually hide H1'
+      instructions: '`<h1>` hidden, accessibility maintained.'
+      instructions_position: below
+  -
+    import: access
+  -
+    handle: primary_image
+    field:
+      max_files: 1
+      container: main
+      type: assets
+      display: 'Primary image'
+      instructions: 'Aim for `2500px` in long dimension. For a social sharing images, these are cropped to `1200 × 628px` (ie: ratio of 2:1)'
+      instructions_position: below
+  -
+    handle: meta_description
+    field:
+      character_limit: 160
+      type: textarea
+      display: 'Meta description'
+      instructions: 'A synopsis of the page. Aim for less than 100-160 characters. Use [metatags.io](https://metatags.io) to test.'
+  -
+    handle: sitemap_priority
+    field:
+      default: '0.3'
+      type: float
+      display: 'Sitemap priority'
+      instructions: 'Site relative importance from `0.1` (least) to `0.9` (most) in `0.1` steps'
+      instructions_position: below
+  -
+    handle: redirect
+    field:
+      type: text
+      display: Redirect

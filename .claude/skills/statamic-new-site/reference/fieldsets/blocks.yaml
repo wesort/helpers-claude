@@ -1,0 +1,66 @@
+title: Blocks
+fields:
+  -
+    handle: blocks
+    field:
+      buttons:
+        - anchor
+        - h2
+        - h3
+        - bold
+        - italic
+        - strikethrough
+        - code
+        - superscript
+        - subscript
+        - unorderedlist
+        - orderedlist
+        - quote
+        - horizontalrule
+        - alignleft
+        - aligncenter
+        - alignright
+        - alignjustify
+        - removeformat
+      smart_typography: true
+      enable_paste_rules: false
+      remove_empty_nodes: true
+      always_show_set_button: true
+      type: bard
+      display: Blocks
+      sets:
+        photos:
+          display: Photos
+          icon: media-image-picture-gallery
+          sets:
+            photo_set:
+              display: Photo
+              icon: orientation-image-picture-horizontal-landscape
+              fields:
+                -
+                  handle: photo_asset
+                  field:
+                    max_files: 1
+                    container: main
+                    type: assets
+                    display: 'Photo asset'
+                -
+                  import: caption_simple
+                -
+                  handle: click_through_link
+                  field:
+                    type: link
+                    display: 'Click through link'
+        code:
+          display: Code
+          icon: programming-script-code-brackets
+          sets:
+            code_set:
+              display: Code
+              icon: programming-script-code-brackets
+              fields:
+                -
+                  handle: raw_code
+                  field:
+                    type: code
+                    display: 'Raw code'

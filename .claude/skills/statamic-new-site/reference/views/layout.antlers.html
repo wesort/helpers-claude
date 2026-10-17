@@ -1,0 +1,56 @@
+<!doctype html>
+<html
+    lang="{{ site:locale }}"
+    dir="ltr"
+    class="antialiased scroll-smooth scroll-pt-4 no-js"
+>
+    <head>
+        {{ partial:head/author }}
+        {{ partial:head/basics }}
+        {{ partial:head/seo }}
+        {{ vite src="resources/css/site.css" }}
+        {{ vite src="resources/js/site.js" }}
+
+        {{ settings:code_injection_in_head }}
+            {{ code }}
+        {{ /settings:code_injection_in_head }}
+    </head>
+    <body
+        x-data
+        class="relative min-h-screen text-primary bg-background print:bg-transparent"
+    >
+        {{ partial:utils/skip_to_content }}
+        {{ dev_panel:grids }}
+
+        <div class="grid-site-12 px-site max-w-site mx-auto">
+            <header class="col-span-full">
+                {{# site header and primary navigation #}}
+            </header>
+
+            <main id="main" class="relative col-span-full">
+                {{# Access levels fail closed: no access value counts as restricted #}}
+                {{ if access <= 10 && logged_in }}
+                    {{ template_content }}
+                {{ elseif access > 10 }}
+                    {{ template_content }}
+                {{ else }}
+                    {{ response:404 }}
+                    {{ partial:errors/redirects_message }}
+                {{ /if }}
+            </main>
+
+            <footer class="col-span-full">
+                {{# site footer #}}
+            </footer>
+        </div>
+
+        {{ dev_panel }}
+
+        {{# production_only items render only on production for visitors, eg analytics #}}
+        {{ settings:code_injection_before_closing_body }}
+            {{ if !production_only || (config:app:env == 'production' && !logged_in) }}
+                {{ code }}
+            {{ /if }}
+        {{ /settings:code_injection_before_closing_body }}
+    </body>
+</html>
