@@ -104,6 +104,8 @@ def main():
 
     files = sorted(os.path.relpath(os.path.join(d, n), root).replace(os.sep, '/')
                    for d, _, names in os.walk(root) for n in names)
+    # Netlify reads these two but doesn't serve them.
+    files = [f for f in files if f not in ('_redirects', '_headers')]
     pages = [f for f in files if f.endswith('.html') and f != '404.html']
 
     # 1. every file
@@ -147,7 +149,8 @@ def main():
         if INJECT_RX.search(text):
             injected += 1
         for m in SRCSET_RX.finditer(text):
-            for part in m.group(2).split(','):
+            # Commas can be part of a filename: only a comma followed by whitespace separates candidates.
+            for part in re.split(r',\s+', html.unescape(m.group(2)).strip().rstrip(',')):
                 bits = part.split()
                 if len(bits) == 2 and bits[1].endswith('w'):
                     candidates[urllib.parse.urljoin(base + path, bits[0])] = int(bits[1][:-1])

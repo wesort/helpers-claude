@@ -10,6 +10,7 @@ deploy it). Things only JavaScript or feeds reference aren't checked: test
 those by hand.
 """
 import argparse
+import html
 import os
 import re
 import sys
@@ -27,7 +28,8 @@ def refs(path, text):
         for m in ATTR_RX.finditer(text):
             yield m.group(2)
         for m in SRCSET_RX.finditer(text):
-            for part in m.group(2).split(','):
+            # Commas can be part of a filename: only a comma followed by whitespace separates candidates.
+            for part in re.split(r',\s+', m.group(2).strip().rstrip(',')):
                 bits = part.split()
                 if bits:
                     yield bits[0]
@@ -53,7 +55,7 @@ def main():
             with open(p, encoding='utf-8', errors='replace') as f:
                 text = f.read()
             for ref in refs(p, text):
-                ref = ref.strip().replace('&amp;', '&')
+                ref = html.unescape(ref.strip())
                 if not ref or SKIP_RX.match(ref):
                     continue
                 # a real ?query is ignored by static hosts; a '?' in a filename is written %3F
