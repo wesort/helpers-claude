@@ -23,6 +23,7 @@ if the project has local changes worth pushing upstream.
 | `/grill-me-brand` | Sharpen a business's brand into a one-page brand core |
 | `/triage` | Decide whether, how small, and when to build a piece of software |
 | `/server-audit` | Read-only, no-sudo stack health and EOL/CVE audit of a server |
+| `/security-audit` | Read-only, no-sudo misconfiguration audit of a server or public site |
 | `/statamic-upgrade-readiness` | Read-only audit of a Statamic site's route to Laravel 13 + Statamic 6 |
 | `/statusline-config` | Set the style and features of Claude Code's status line |
 
