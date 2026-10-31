@@ -5,8 +5,9 @@
 
 1. Rebuild srcset attributes that wget --convert-links mangled (it miscounts
    offsets when a srcset spans several lines or contains &amp;).
-2. Rename files whose names contain '?' or '#' (Netlify refuses to deploy them)
-   and rewrite the references to them (wget writes those as %3F / %23).
+2. Rename files whose names contain '?' or '#' (Netlify refuses to deploy them), or
+   the '@' that --restrict-file-names=windows writes instead (web servers can't tell
+   the file's type from 'app.js@ver=1'), and rewrite the references to them.
 3. --noindex: leave every page with exactly one
    <meta name="robots" content="noindex,nofollow" />.
 4. Report leftovers for a human: .php names, extensionless files, links to the
@@ -31,6 +32,14 @@ SRCSET_RX = re.compile(r'(\ssrcset\s*=\s*)(["\'])(.*?)\2', re.I | re.S)
 DESCRIPTOR_RX = re.compile(r'^\d+(?:\.\d+)?[wx]$')
 EXTERNAL_RX = re.compile(r'^(?:[a-z][a-z0-9+.-]*:|//)', re.I)
 QNAME_RX = re.compile(r'^(.*?)[?#](.*)$')
+# wget --restrict-file-names=windows writes '?' as '@'. A real '@' isn't directly after an extension.
+AT_QUERY_RX = re.compile(r'^(.+\.[A-Za-z0-9]{2,5})@([^\s/-][^\s/]*)$')
+
+
+def split_query(name):
+    """(base, query) if a filename holds a URL query, else None."""
+    m = QNAME_RX.match(name) or AT_QUERY_RX.match(name)
+    return m.groups() if m else None
 
 
 def walk(root):
@@ -175,10 +184,10 @@ def plan_renames(root):
     plans = []
     for path in walk(root):
         d, name = os.path.split(path)
-        m = QNAME_RX.match(name)
-        if not m:
+        parts = split_query(name)
+        if not parts:
             continue
-        base, query = m.groups()
+        base, query = parts
         stem, own = os.path.splitext(base)
         added = ''  # extension wget --adjust-extension appended after the query
         for a in ('.html', '.css'):
@@ -213,11 +222,13 @@ def rewrite_refs(texts, renames):
     and HTML keeps '&' as &amp;."""
     table, conflicts = {}, set()
     for _, old, new in renames:
-        enc = old.replace('?', '%3F').replace('#', '%23')
-        for form in {enc, enc.replace('%3F', '%3f'), enc.replace('&', '&amp;')}:
-            if table.get(form, new) != new:
-                conflicts.add(old)
-            table[form] = new
+        for space in (' ', '%20', '&#32;'):  # wget writes spaces in names more than one way
+            enc = old.replace('?', '%3F').replace('#', '%23').replace(' ', space)
+            target = new.replace(' ', space)
+            for form in {enc, enc.replace('%3F', '%3f'), enc.replace('&', '&amp;'), enc.replace('@', '%40')}:
+                if table.get(form, target) != target:
+                    conflicts.add(old)
+                table[form] = target
     if not table:
         return 0, conflicts
     alt = '|'.join(re.escape(f) for f in sorted(table, key=len, reverse=True))
@@ -254,7 +265,7 @@ def files_matching(texts, root, rx):
 
 def report(root, texts, renames, old_domains):
     renamed_to = {os.path.join(d, new): old for d, old, new in renames}
-    final = [p for p in walk(root) if not QNAME_RX.match(os.path.basename(p))] + list(renamed_to)
+    final = [p for p in walk(root) if not split_query(os.path.basename(p))] + list(renamed_to)
     print('\nNeeds a human:')
     checks = [
         ('files with .php in the name', sorted(os.path.relpath(p, root) for p in final if '.php' in os.path.basename(p).lower())),
