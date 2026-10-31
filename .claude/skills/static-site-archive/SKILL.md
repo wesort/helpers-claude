@@ -1,6 +1,6 @@
 ---
 name: static-site-archive
-description: Turn a site into a static copy hosted on Netlify, then retire the server it ran on. Covers sites that are already static, Statamic v1 and v2, and other server-rendered CMS sites (crawled with wget). Use when archiving, freezing or retiring a site, moving a static site to Netlify, or when a wget mirror won't deploy on Netlify or has broken srcset images or '?' filenames. Walks the user through every decision that needs their input.
+description: Turn a site into a static copy hosted on Netlify, then retire the server it ran on. Covers sites that are already static, Statamic v1 and v2, WordPress and other server-rendered CMS sites (crawled with wget), and tidying an existing crawl whose original has gone. Use when archiving, freezing or retiring a site, moving a static site to Netlify, or when a wget mirror won't deploy on Netlify, has broken srcset images, '?' or '@' filenames, or is full of leftover CMS markup. Walks the user through every decision that needs their input.
 ---
 
 # Site → static copy on Netlify
@@ -47,6 +47,7 @@ Work through the phases in order. Each one ends in something checkable; don't st
 | D8 | Forms, search, login, comments: remove or replace (e.g. with a mailto link)? | Phase 3 | Remove |
 | D9 | README wording: what the site was, where its successor lives, credits | Phase 7 | Ask for the text |
 | D10 | When to delete the old site | Phase 6 | After verification; the user may want it as a dev environment for a few days |
+| D11 | How clean? Only what deploying needs, tidied files with the same look, or rebuilt templates? | Phase 3 | Tidied files with the same look |
 
 ## Scripts
 
@@ -54,10 +55,11 @@ In `scripts/`, Python 3.6+ with no dependencies. Copy them into the site repo as
 
 - **`fix_mirror.py MIRROR [--dry-run] [--noindex] [--old-domain DOMAIN]`**
   1. Rebuilds `srcset`s that wget mangled. The original width descriptors can't be recovered, so each candidate gets its image's real pixel width.
-  2. Renames files with `?` or `#` in the name and rewrites the references to them.
+  2. Renames files with `?` or `#` in the name, or the `@` that `--restrict-file-names=windows` writes instead, and rewrites the references to them.
   3. With `--noindex`, leaves each page with exactly one `noindex,nofollow` robots tag.
   4. Lists what still needs a human.
 - **`linkcheck.py MIRROR`**: checks that every local `href`/`src`/`srcset`/`url()` resolves. Exits 1 on a missing target or a `?`/`#` filename.
+- **`tidy_html.py MIRROR [--dry-run] [--old-domain DOMAIN] [--wordpress] [--drop REGEX] [--drop-unless REGEX BODY_REGEX] [--inline-list CLASS] [--prune]`**: puts tags on their own lines for view-source, points old-domain URLs at local files, removes the CSS and scripts you name (only on pages that don't need them, with `--drop-unless`), and deletes files nothing references. Safe to run again. See the options in Phase 3.
 - **`verify_deploy.py MIRROR DEPLOY_URL [--live LIVE_URL] [--indexable]`**: checks the deployed site.
   - every file returns 200, and non-HTML files are byte-identical;
   - every page has the `X-Robots-Tag` header and one noindex meta tag (skipped with `--indexable`);
@@ -79,7 +81,9 @@ In `scripts/`, Python 3.6+ with no dependencies. Copy them into the site repo as
    | `_app/` and `_content/` | Statamic v1 | Phase 2B |
    | `statamic/` and `site/` (version in `statamic/core/Statamic.php`) | Statamic v2 | Phase 2B |
    | `statamic/cms` in `composer.json` | Statamic v3+ | Prefer its own static site generator; otherwise Phase 2B |
+   | `wp-config.php` or `wp-content/` | WordPress | Phase 2B, then the WordPress notes in Phase 3 |
    | Any other server-rendered site | Other CMS | Phase 2B; find the equivalents of the Statamic notes yourself |
+   | Only a wget crawl, and the original has gone | Existing crawl | Phase 2C |
 
    A "static" site can still depend on the server: grep for `.php`, server-side includes (`<!--#include`), `.htaccess` rules, and rewrite or redirect rules in the web-server config. Anything found either becomes a Netlify redirect or header, or makes it a Phase 2B crawl.
 
@@ -151,7 +155,7 @@ Crawling production means changing settings on the live site, clearing its cache
    ```
    - For Statamic v2, `statamic/server.php` is the router. It serves existing files (assets, theme, generated images) directly.
    - Each `php -S` handles one request at a time. To warm faster, run a few on other ports and spread the URLs with `xargs -P`.
-   - Stop them with `pkill -f '[s]tatamic/server.php'`. The bracket stops the pattern matching the shell that runs `pkill`, which would otherwise be killed too.
+   - Stop them with `pkill -f '[s]tatamic/server.php'`. The bracket stops the pattern matching the shell that runs `pkill`, which would otherwise be killed too. It only works if nothing else in that command contains the plain text, so run `pkill` on its own rather than alongside the command that restarts the server.
 4. **Make template and settings changes directly in the clone** (removed analytics, simplified `srcset`s, route extensions, cached image mode) and commit them, instead of temporarily editing production. Seed from the clone's own sitemap.
 5. **After the crawl,** rewrite every remaining `http://127.0.0.1:8081` (`og:url`, `og:image`, `itemprop="url"`, sitemap `<loc>`s) to `https://DOMAIN`. Do it after copying the `og:image` files (step 3.5 below), whose paths come from those same URLs.
 6. **A web server pointed at the clone's `MIRROR/` makes a handy preview.** Without a clean-URL rule, though, `verify_deploy.py` reports extensionless pages as 404 there. Its file checks and `--live` comparison are still valid. Re-run the full check on Netlify.
@@ -195,6 +199,18 @@ wget -e robots=off --mirror --page-requisites --convert-links --adjust-extension
 - References wget couldn't fetch (a 404, or a rejected path) are left as absolute URLs to the original domain. `--old-domain` lists them.
 - Absolute URLs in `<meta>` tags and sitemap `<loc>`s are never converted and their targets never fetched. They're fine if the static copy keeps the same domain, provided the targets exist.
 - Files referenced only from feeds, JavaScript or JSON aren't fetched. Find them and copy them in from the server.
+- With `--restrict-file-names=windows`, `?` becomes `@` (`app.js@ver=1.2`, `index.html@p=31.html`). These deploy, but look out: **nginx serves them as `application/octet-stream`, and with `X-Content-Type-Options: nosniff` the browser refuses to run them.** Every local script is silently blocked, while `noscript` fallbacks make the page look fine. `curl -I` a script to check. `fix_mirror.py` renames them.
+- Attributes wget doesn't know, like the `data-src` and `data-srcset` of lazy-loaded images, keep their absolute URLs, and the images only load while the old domain still serves them. `tidy_html.py --old-domain` points them at the local files.
+
+## 2C. Existing crawl: work with what's there
+
+The original can't be crawled again, so anything the crawl missed is gone unless another copy exists. Check backups before saying so. Tell the user this up front, and show them a preview early (below): they'll know what's missing sooner than a script will. Skip the `--live` comparison in `verify_deploy.py`. `git mv` the crawl into `MIRROR/` as its own commit, so later diffs stay readable, and keep the raw crawl's commit as the reference.
+
+**If nginx or a similar server serves the repo root**, moving files or switching branch there changes the live site straight away, even without a push:
+
+1. Build in a separate worktree outside the web root: `git worktree add -b static-site ../build main`. Its branch can be pushed to `main` without touching the live checkout (`git push origin static-site:main`).
+2. **Share a preview early.** `cp -al ../build/MIRROR preview` in the web root gives a URL with no extra disk use. It's public unless protected, and hard links share contents, so a tool that rewrites files in place changes both copies. Use `cp -a` for any copy you'll run tools on. Pages using root-relative URLs won't work under `/preview/`.
+3. **Keep the site up when `main` moves.** The clean fix is pointing the web root at `MIRROR/`, which the user can do in the hosting panel. Until then, relative symlinks from the repo root into `MIRROR/`, listed in `.git/info/exclude`, keep it working. They also leave the repo's own files publicly readable, so say so and remove them as soon as the panel is changed.
 
 ## 3. Fix and verify locally
 
@@ -239,7 +255,26 @@ Then work through the report:
   Cropped sizes (thumbnails, `og:image`) change; scale-only sizes don't.
 - **Content the crawl couldn't reach.** Prefer publishing it temporarily and crawling it. Otherwise build each page by hand from an existing page of the same type, and generate its images to match the CMS's sizes. If the CMS strips colour profiles, convert wide-gamut originals to sRGB first: `convert in.jpg -profile sRGB.icc -resize '1200x1000>' -strip -quality 80 out.jpg`.
 - **JavaScript features.** `grep -rhoE "<script[^>]*>" archive | sort | uniq -c` shows what's there. Serve locally (`cd archive && python3 -m http.server 8000`) and ask the user to click through anything script-driven: galleries, sliders, video embeds.
-- **`robots.txt`.** For an archive, don't ship one that disallows crawling: crawlers must be able to fetch a page to see its `noindex`.
+- **`robots.txt`.** For an archive, recommend not shipping one that disallows crawling: crawlers must be able to fetch a page to see its `noindex`. If the user wants one anyway, say that URLs already indexed or linked from elsewhere may stay listed without a description, then add it and record the decision.
+- **Tidying (D11).** Run `tidy_html.py` on a copy, check it as below, then apply it to `MIRROR/`. Removing CSS or scripts is where a site breaks without anything looking wrong in the code.
+  - **Read the theme's main script first.** It shows which plugins are called only if loaded (`if($().plugin)`), which are called regardless and must stay, and which classes they act on. Count the pages with each class: most scripts are needed on only a few.
+  - **Load by page, not all or nothing.** For example: `--drop-unless 'isotope-js' 'class="[^"]*portfolio-container'`.
+  - **Line breaks can add visible spaces.** A break between inline `<li>`s renders as a space, so name those lists with `--inline-list`. Comparing visible text catches this.
+- **WordPress.** Use `tidy_html.py --wordpress`, and also:
+  - **Duplicate pages.** `?p=N` shortlinks are saved as full copies of each post. Map each to its clean page using the `postid-N` or `page-id-N` class on `<body>`, confirm their visible text matches, rewrite links to the clean URL, then delete the copy. Keep old links working with one redirect per page: `from = "/"`, `query = {p = "31"}`, `to = "/clean-url/"`. `/blog/page/1/` and `?page_number=1` are usually duplicates too.
+  - **Leftovers to delete.** `wp-json/`, `xmlrpc.php?rsd`, every `feed/`, and the head tags pointing at them. Keep `wp-content/uploads/`, referenced or not: it may be the only copy.
+  - **Hidden scripts.** Plugins put code in `<script src="data:text/javascript;base64,…">`, including analytics settings, nonces and old-domain URLs. Grep won't find them, so decode them. `tidy_html.py --drop` matches the decoded code.
+  - **Don't delete `global-styles-inline-css` outright.** It holds the site's Customizer CSS as well as presets, and block galleries need its `.is-layout-flex` rules or their images stack. `--wordpress` keeps those and drops the rest.
+  - **Features that call `admin-ajax.php`** do nothing on a static host. Gallery lightboxes and AJAX paging are the usual ones: remove the lightbox class and `data-*-url` attributes so thumbnails open the image file, and let paging use the crawled pages' plain links. The gallery's script may still be needed for layout, so keep it on those pages and test without it.
+  - **Maps API keys** appear in every page's HTML. Removing the script doesn't remove the key from git history or caches, so ask the user to restrict or delete it.
+- **Check that nothing changed.** Whenever you tidy, compare before and after on a copy:
+  1. **Use a baseline that behaves like the original.** If scripts are being blocked (see above), comparing against it only finds false differences. Serve the raw crawl locally with correct MIME types, from a few lines of `http.server` with `guess_type` ignoring the `@…` suffix.
+  2. **Run `linkcheck.py`**, and compare a parsed DOM of every page, ignoring whitespace, scripts and styles.
+  3. **Check every page in a headless browser**, with images blocked to keep it fast: visible text, plus each element's position, size and key computed styles. This is stable, and finds real differences.
+  4. **Compare pixels on a sample**, including one page of each type and every gallery. Wait for visible images to finish loading before the screenshot, and retry a mismatch: differences that move between runs are timing, not changes. Open any that stay, side by side.
+  5. **Click what's interactive:** menus, sliders, filters, gallery paging.
+
+  If no browser is installed and there's no root: `npx playwright install chromium`, `ldd` it for missing libraries, `apt-get download` those, `dpkg-deb -x` them into a scratch folder and set `LD_LIBRARY_PATH`. Keep all of this out of the repo.
 
 ## 4. Netlify
 
