@@ -28,7 +28,7 @@ if the project has local changes worth pushing upstream.
 
 | Skill | Description |
 |-------|-------------|
-| `static-site-archive` | Turn a static, Statamic v1/v2 or other CMS site into a static copy on Netlify, then retire the old server-side site |
+| `static-site-archive` | Turn a static, Statamic v1/v2, WordPress or other CMS site, or an existing crawl, into a tidy static copy on Netlify, then retire the old server-side site |
 
 Skills live in `.claude/skills/<name>/` and can bundle scripts.
 `/sync-check` only compares commands, so check skills by hand.

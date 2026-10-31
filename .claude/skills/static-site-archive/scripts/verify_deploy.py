@@ -34,7 +34,8 @@ INJECT_RX = re.compile(r'hosting-provider|/\.netlify/scripts/|netlify\.new', re.
 # request as a browser to see what visitors get
 BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
 MUST_404 = ['/this-page-does-not-exist', '/index.php', '/cp', '/login',
-            '/site/users/', '/site/settings/routes.yaml', '/.env', '/_config/users/']
+            '/site/users/', '/site/settings/routes.yaml', '/.env', '/_config/users/',
+            '/wp-login.php', '/wp-admin/', '/xmlrpc.php']
 
 
 def fetch(url, max_bytes=None):
