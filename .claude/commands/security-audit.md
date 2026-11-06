@@ -178,7 +178,7 @@ Scripts for another server (or for root) are run by the user, never by Claude. A
 - **Forge recipe.** Print the script as it stands and say which user the recipe runs as (the site user, usually `forge`, or `root`). A recipe that still shows as running after a couple of minutes has usually died part-way: ask the user to look at the newest `~/.forge/provision-*.output` on the server (and `ps -u forge` for a live process). If it died, re-run that part over SSH.
 - **Over SSH.** Print the script wrapped in `bash <<'EOF' 2>&1` and `EOF`, so it runs in its own shell and an `exit` cannot close the session. For a root script, wrap it in `sudo bash <<'EOF' 2>&1` instead (sudo asks for the password once). Terminals can mangle a long paste: syntax errors or garbled lines in the output mean nothing after them ran, so give the rest again in smaller pieces.
 
-Keep every handover script short (about 30 lines at most) and split longer work into parts that each end with `== end`, so a part that stops early is obvious.
+End every handover script with `== end`, so a run that stops early is obvious. Over SSH, keep each pasted part short (about 30 lines at most), because terminals mangle long pastes; split longer work into parts. Forge recipes have run scripts of 100 lines and more cleanly, so length matters less there, but start a new script short until it has run cleanly once.
 
 ## Severity
 
