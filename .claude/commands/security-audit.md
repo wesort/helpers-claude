@@ -80,7 +80,7 @@ grep -cE '<signature>' <tmpfile>
 13. **Directory listing.** GET `/assets/`, `/uploads/`, `/storage/`, `/img/`: grep for `Index of /`.
 14. **Statamic CP.** GET `/cp/auth/login` (or the route from B10): reachable or not. Record it; the verdict combines it with B10, B11 and `/server-audit`'s mailer finding.
 15. **Catch-all (server mode).** `curl` each public IP from A1 with no matching Host header: it should not serve a real site. Curl's "Empty reply" (52, Forge's 444) and a TLS "unrecognized name" error (35) both mean it refused, which is a pass.
-16. **Basic auth on non-production PHP sites.** GET `/` and report the status and whether basic auth answered (`grep -ci '^www-authenticate: basic'` on the response headers). Server mode: each Laravel or Statamic site whose Environment from B7 is not `production`, or whose hostname starts `dev.`, `staging.`, `test.` or `uat.` where B7 is unknown. Outside mode: those hostnames only, since the environment cannot be seen from outside. An app's own login page does not count. Static sites: n/a.
+16. **Basic auth on non-production PHP sites.** GET `/` and report the status and whether basic auth answered (`grep -ci '^www-authenticate: basic'` on the response headers). Server mode: each Laravel or Statamic site whose Environment from B7 is not `production`, or whose hostname starts `dev.`, `test.` or `uat.` where B7 is unknown. Outside mode: those hostnames only, since the environment cannot be seen from outside. An app's own login page does not count. Static sites: n/a. Staging sites (hostname starting `staging.`, or Environment `staging`) are exempt: they are review copies shared with clients, so they are expected to be reachable without basic auth. Record them as "staging, no basic auth expected" rather than as a finding.
 17. **HTTP to HTTPS.** GET `http://<host>/` for each hostname: it should 301 to `https://` on the same host (or, for an alias, to the primary domain). Record the status and the target host only.
 
 ## D. Root script (server and remote modes)
@@ -183,7 +183,7 @@ End every handover script with `== end`, so a run that stops early is obvious. O
 ## Severity
 
 - 🔴 **Act now:** `.env`, `.git` or a log served over HTTP; a database dump, `phpinfo` or Adminer in a web root; debug mode on a live site; SSH password authentication effective; firewall inactive; a database, Redis or Memcached reachable publicly.
-- 🟡 **Fix soon:** an SSH key nobody recognises; a service listening publicly but firewalled; directory listing; dotfile deny rule missing; Statamic CP reachable with 2FA not enforced; site directories the user confirms are stale; enabled configs whose root is missing; `APP_ENV` not `production` on a live hostname; a non-production PHP site without basic auth; catch-all serving a site.
+- 🟡 **Fix soon:** an SSH key nobody recognises; a service listening publicly but firewalled; directory listing; dotfile deny rule missing; Statamic CP reachable with 2FA not enforced; site directories the user confirms are stale; enabled configs whose root is missing; `APP_ENV` not `production` on a live hostname; a non-production PHP site (other than staging) without basic auth; catch-all serving a site.
 - 🟢 **Fine:** checked and matches the baseline.
 - ⏳ **Pending root:** waiting on section D output (or, in remote mode, section E).
 - ⚪ **Unknown:** could not be determined; say why.
