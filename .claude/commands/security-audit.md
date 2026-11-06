@@ -1,7 +1,7 @@
 ---
 name: security-audit
-description: Run a read-only, no-sudo audit of a server or public site for misconfiguration rather than out-of-date software. On a server it checks inside (SSH settings, listening ports, app debug mode, files in web roots, stray nginx sites, Statamic CP and 2FA) and outside (whether .env, .git, logs or listings are served over HTTP). Given URLs instead, it runs only the outside checks, from anywhere. Root-only checks are handed to the user as a short read-only script to run as root (for example as a Laravel Forge recipe). Use this when the user wants to check a server or site for poor configuration, leaks or hardening gaps, or asks "is this box locked down", "is anything exposed", "security check <site>". For EOL versions and CVEs use /server-audit instead.
-allowed-tools: Read, Glob, Grep, Bash(cat /etc/os-release), Bash(hostname -I), Bash(ss -tln), Bash(ss -uln), Bash(ls *), Bash(grep *), Bash(ssh-keygen -lf *), Bash(php */artisan about*), Bash(php */artisan --version), Bash(curl -sS --max-time 10 *), Bash(wc *)
+description: Run a read-only, no-sudo audit of a server or public site for misconfiguration rather than out-of-date software. On a server it checks inside (SSH settings, listening ports, app debug mode, files in web roots, stray nginx sites, Statamic CP and 2FA) and outside (whether .env, .git, logs or listings are served over HTTP). Given another server's name or IP, it runs the outside checks from where it is and hands the inside checks to the user as a read-only script. Given URLs instead, it runs only the outside checks, from anywhere. Root-only checks are handed to the user as a short read-only script to run as root (for example as a Laravel Forge recipe). Use this when the user wants to check a server or site for poor configuration, leaks or hardening gaps, or asks "is this box locked down", "is anything exposed", "security check <site>". For EOL versions and CVEs use /server-audit instead.
+allowed-tools: Read, Glob, Grep, Bash(cat /etc/os-release), Bash(hostname), Bash(hostname -I), Bash(forge server:list), Bash(forge server:current), Bash(forge server:switch *), Bash(forge site:list), Bash(ss -tln), Bash(ss -uln), Bash(ls *), Bash(grep *), Bash(ssh-keygen -lf *), Bash(php */artisan about*), Bash(php */artisan --version), Bash(curl -sS --max-time 10 *), Bash(wc *)
 ---
 
 # Security configuration audit
@@ -15,7 +15,8 @@ The baseline is a server provisioned by Laravel Forge (or similar) running small
 `$ARGUMENTS`
 
 - **Empty:** server mode. Run on the server itself. Inside checks, then outside checks against every site this server's nginx serves.
-- **One or more URLs:** outside mode. Run the outside checks (section C) only, against those URLs. Works from any machine, including for sites hosted elsewhere (Netlify, shared hosting). Skip sections A, B and D.
+- **A server name or IP that is not this machine** (compare with `hostname` and `hostname -I`): remote mode. Run the outside checks (section C) from here, and hand sections A and B to the user as the inside script (section E) and the root checks as the root script (section D), both to run on that server. Never SSH to it. See [Remote mode](#remote-mode).
+- **One or more URLs:** outside mode. Run the outside checks (section C) only, against those URLs. Works from any machine, including for sites hosted elsewhere (Netlify, shared hosting). Skip sections A, B, D and E.
 
 ## Hard rules
 
@@ -23,26 +24,37 @@ The baseline is a server provisioned by Laravel Forge (or similar) running small
 - **NO SUDO.** Never run sudo or prompt for a password. Root-only checks go in the root script (section D) for the user to run themselves.
 - **NEVER PRINT SECRETS.** Do not read or `stat` `.env` files at all; use `php artisan about` for environment and debug state, and the root script for their permissions. Never print HTTP response bodies: pipe them to `grep -c` and report the match count only. SSH keys as fingerprints only (`ssh-keygen -lf`), never full key lines. User files (for example Statamic `users/*.yaml`) hold password hashes and 2FA secrets: read key names only, never values.
 - **GET and HEAD only, fixed paths only.** Every outside request is one of the paths listed in section C, with `--max-time 10`. No crawling, no fuzzing, no POST, no login attempts. This must look like a few page views, not a scan.
+- **No remote shells.** In remote mode, never SSH or run commands on the other server, including through the Forge CLI. The user runs sections D and E there and pastes the output back.
 - **Timebox it.** A quick read, not a forensic audit. If something is slow or ambiguous, note it and move on.
 
-## A. Server, inside (server mode only)
+## Remote mode
+
+1. **Hostnames.** If the Forge CLI is available: `forge server:current`, then `forge server:switch <name>` if needed (say which org and server it is now on), then `forge site:list`. That lists each site's primary domain only, not its aliases. Without the CLI, ask the user for the hostnames.
+2. **Outside checks.** Run section C from here against those hostnames, with the catch-all check (C15) against the IP given or shown by `forge server:list`.
+3. **Inside and root checks.** Print sections E and D and ask the user to run them on the server, for example as Laravel Forge recipes: E as the site user (`forge`), D as `root`. Running E as root would audit root's home instead, and artisan run as root can leave root-owned files in a site's `storage/`. Mark the results they settle ⏳ pending.
+4. **When the output arrives,** fill in sections A and B from it, then run section C against any `server_name` in E's output not yet probed (aliases, `www.` hosts).
+
+## A. Server, inside (server mode; remote mode reads it from section E)
 
 1. **Context.** `cat /etc/os-release`, `hostname -I` (public addresses, for the catch-all check in C).
 2. **SSH as configured.** Grep `/etc/ssh/sshd_config` and `/etc/ssh/sshd_config.d/*.conf` for `PermitRootLogin`, `PasswordAuthentication`, `KbdInteractiveAuthentication`, `PubkeyAuthentication`, `Port`. Drop-ins are included first and the first value wins, so a drop-in beats the main file. Watch for a cloud-init drop-in (for example `50-cloud-init.conf`) setting `PasswordAuthentication yes`; it is often readable only by root, so a permission error there is expected. The effective values come from the root script; mark these "as configured, confirm with root script".
    - Forge itself logs in as root with its own key, so root login **by key** is expected. Flag root login by password, and password authentication generally.
 3. **Keys for this user.** `ssh-keygen -lf ~/.ssh/authorized_keys`: list fingerprints and comments, and ask the user to confirm each one is known. Other users' and root's keys come from the root script.
 4. **Listening ports.** `ss -tln` (and `ss -uln`). Anything bound to `0.0.0.0`, `[::]` or a public address other than 22, 80 and 443 is a finding: especially databases (3306, 5432), Redis (6379), Memcached (11211), search engines (7700, 9200) and dev servers (5173, 3000, 8000). Process owners and firewall state come from the root script, so until then say "listening publicly, firewall unconfirmed". Redis and Memcached on `0.0.0.0` have appeared on every Forge server audited so far, so if the firewall denies them, record a baseline note rather than a finding.
-5. **Sites from nginx.** Read `/etc/nginx/sites-enabled/*` and record each `server_name`, `root`, and any `autoindex on`, following each `include`: newer Forge sites keep their rules in `/etc/nginx/forge-conf/<site-id>/site.conf`. For each site also check:
+5. **Sites from nginx.** Read `/etc/nginx/sites-enabled/*` and record each `server_name`, `root`, and any `autoindex on` or `auth_basic`, following only the `include`s each file names (relative to `/etc/nginx`, globs expanded, two levels deep). Forge lays sites out in two ways:
+   - **Sites created before October 2025:** one file per site. Every domain on the site, aliases included, shares one `server_name` line or a redirecting `server` block in that file. Includes live in `forge-conf/<domain>/{before,server,after}/`; basic auth is a `server/protected_site-*.conf` there.
+   - **Sites created since October 2025:** one file per domain, each with its own certificate. Each file includes `forge-conf/<site-id>/site.conf` (the shared rules, and the dotfile deny rule) and its own `forge-conf/<site-id>/<domain>/before/*`: the `www.` redirect and the port-80 `server_name .<domain>` block that sends http to https.
+   Files that share a `root` are one site; report it once with its aliases. An alias (a legacy domain) is expected to redirect to the site's primary domain. Each domain's `before/` files are included only by that domain's own file, so the names do not overlap; collecting every file under `forge-conf/<site-id>/` instead makes sibling domains look duplicated. For each site also check:
    - the dotfile deny rule Forge adds (`location ~ /\.(?!well-known).*` with `deny all`) is present, inline or in an include; missing means `.env` and `.git` may be served if they sit in the web root
    - the `root` directory exists (missing means an orphaned config)
    Configs only in `sites-available` are not served: mention them, but they are not a finding.
 6. **Leftovers.** Compare site directories in the web user's home (for example `/home/forge/*`) with the nginx configs: directories with no config may be stale copies of old sites, often holding a `.env`, or deliberate (backups, working clones), so list them and ask, and rate them only once the user says they are stale. Note whether a catch-all / default server exists and what it does (Forge's closes the connection with 444).
 
-## B. Per site, inside (server mode only)
+## B. Per site, inside (server mode; remote mode reads it from section E)
 
 For each site from A5, terse. Say which directories you inspected and which you skipped and why. The app directory is the nginx `root` without its trailing `/public`; on zero-downtime sites that is `<site>/current`.
 
-7. **Environment and debug.** Run artisan by absolute path, with no `cd`. On Laravel 9.21 and later (check with `php <app>/artisan --version`): `php <app>/artisan about --only=environment`. Flag `Debug Mode` enabled or `Environment` not `production` on a live hostname. Note whether config is cached, since cached config is what runs. Older Laravel apps lack `about`: mark ⚪ unknown (still without reading `.env`) and add it to the caveats. Statamic 2 and static sites: n/a.
+7. **Environment and debug.** Run artisan by absolute path, with no `cd`. On Laravel 9.21 and later (check with `php <app>/artisan --version`): `php <app>/artisan about --only=environment`. Flag `Debug Mode` enabled or `Environment` not `production` on a live hostname. Note whether config is cached, since cached config is what runs. Errors such as `fatal: not a git repository` come from the app's own config running `git` in the current directory when config is not cached: harmless, so ignore them. Older Laravel apps lack `about`: mark ⚪ unknown (still without reading `.env`) and add it to the caveats. Statamic 2 and static sites: n/a.
 8. **Web root contents.** Glob the nginx `root` (depth 3, skip `node_modules` and `vendor`) for files that should not be public: `*.sql`, `*.sql.gz`, `*.zip`, `*.tar*`, `*.bak`, `*.log`, `.env*`, `.git/`, `phpinfo.php`, `info.php`, `adminer*.php`, `composer.json`, `package.json`. Static sites often have the repo root as the web root, so this matters most there. Zips in an assets folder may be intentional downloads: list them and let the user judge. A `.git/` in the web root of a site deployed from git is fine if the deny rule is present and C12 returns 403.
 9. **`.env` permissions.** From the root script, which follows symlinks: zero-downtime releases link `.env` to a shared file, and a symlink's own mode is always 777. Mode `664` means any local account can read the file, not just its owner. Where one site user owns everything, record a baseline note rather than a finding; where several site users share the box, it is 🟡.
 10. **Statamic control panel.** From `config/statamic/cp.php`: whether the CP is enabled and its route. A reachable CP on a site nobody edits is surface for no benefit.
@@ -50,7 +62,14 @@ For each site from A5, terse. Say which directories you inspected and which you 
 
 ## C. Outside (both modes)
 
-For each hostname (server mode: every `server_name` from A5 over https, dropping any leading dot and skipping `_`; outside mode: the URLs given). Report status codes and match counts only, never bodies. Do not follow redirects: a host that answers 301 for every path just redirects, so note it and probe its target instead. A 401 means the site is behind basic auth, so report those paths as "behind auth, not probed" rather than clean.
+For each hostname (server mode: every `server_name` from A5 over https, dropping any leading dot and skipping `_`; remote mode: see [Remote mode](#remote-mode); outside mode: the URLs given). Report status codes and match counts only, never bodies. Do not follow redirects: a host that answers 301 for every path just redirects, so note it, record the target's host (the host only, not the full URL), and probe the target instead. An alias should redirect to its site's primary domain. A 401 means the site is behind basic auth, so report those paths as "behind auth, not probed" rather than clean. A dotfile path answering 403 on a basic-auth site is the deny rule running before auth, which is a pass.
+
+Make each request in this form, so a body never reaches the output, reusing one temporary file and removing it at the end:
+
+```bash
+curl -sS --max-time 10 -o <tmpfile> -w '%{http_code}\n' 'https://<host><path>'
+grep -cE '<signature>' <tmpfile>
+```
 
 12. **Leaks.** GET each path and grep the body for a signature, reporting the count:
     - `/.env`: lines matching `^[A-Z][A-Z0-9_]*=` (3 or more on a non-HTML response is a leak)
@@ -62,10 +81,11 @@ For each hostname (server mode: every `server_name` from A5 over https, dropping
 14. **Statamic CP.** GET `/cp/auth/login` (or the route from B10): reachable or not. Record it; the verdict combines it with B10, B11 and `/server-audit`'s mailer finding.
 15. **Catch-all (server mode).** `curl` each public IP from A1 with no matching Host header: it should not serve a real site. Curl's "Empty reply" (52, Forge's 444) and a TLS "unrecognized name" error (35) both mean it refused, which is a pass.
 16. **Basic auth on non-production PHP sites.** GET `/` and report the status and whether basic auth answered (`grep -ci '^www-authenticate: basic'` on the response headers). Server mode: each Laravel or Statamic site whose Environment from B7 is not `production`, or whose hostname starts `dev.`, `staging.`, `test.` or `uat.` where B7 is unknown. Outside mode: those hostnames only, since the environment cannot be seen from outside. An app's own login page does not count. Static sites: n/a.
+17. **HTTP to HTTPS.** GET `http://<host>/` for each hostname: it should 301 to `https://` on the same host (or, for an alias, to the primary domain). Record the status and the target host only.
 
-## D. Root script (server mode only)
+## D. Root script (server and remote modes)
 
-Some checks need root. Do not run them. Print this script exactly, ask the user to run it as root (for example as a Laravel Forge recipe with user `root`), and to paste the output back: the Forge CLI has no recipe commands, so you cannot fetch it yourself. Explain that it is read-only and prints no secrets: fingerprints, settings and port owners only. When the output arrives, complete the pending verdicts; until then mark them ⏳ pending root.
+Some checks need root. Do not run them. Print this script exactly, ask the user to run it as root (for example as a Laravel Forge recipe with user `root`), and to paste the output back: the Forge CLI has no recipe commands, so you cannot fetch it yourself. Explain that it is read-only and prints no secrets: fingerprints, settings and port owners only. When the output arrives, complete the pending verdicts; until then mark them ⏳ pending root. If the user already has this as a recipe, they only need to run it.
 
 ```bash
 #!/bin/bash
@@ -92,12 +112,71 @@ for f in /home/*/*/.env /home/*/*/current/.env /home/*/*/auth.json /home/*/*/cur
 done
 ```
 
+## E. Inside script (remote mode)
+
+Sections A and B as one read-only script, for a server Claude is not running on. Print it exactly and ask the user to run it on that server as the site user (for a Laravel Forge recipe, user `forge`), and to paste the output back. It prints no secrets: settings, fingerprints, filenames and counts only. It never reads `.env`.
+
+```bash
+#!/bin/bash
+# security-audit inside checks, run as the site user (not root). Read-only. Prints no secrets.
+echo "== context"
+. /etc/os-release; echo "$PRETTY_NAME"; hostname; hostname -I
+echo "== sshd as configured (drop-ins first; first value wins)"
+grep -HiE '^\s*(PermitRootLogin|PasswordAuthentication|KbdInteractiveAuthentication|PubkeyAuthentication|Port)\b' /etc/ssh/sshd_config.d/*.conf /etc/ssh/sshd_config 2>&1
+echo "== $(whoami) authorized keys (fingerprints only)"
+ssh-keygen -lf ~/.ssh/authorized_keys 2>&1
+echo "== listening"
+ss -tln; ss -uln
+echo "== nginx sites-available not enabled"
+for f in /etc/nginx/sites-available/*; do [ -e "/etc/nginx/sites-enabled/$(basename "$f")" ] || echo "$f"; done
+# The files a config names in its include lines (relative to /etc/nginx, globs expanded).
+expand() { for g in $(grep -hoE '^\s*include\s+forge-conf/[^;]+' "$@" 2>/dev/null | awk '{print $2}'); do for p in /etc/nginx/$g; do [ -f "$p" ] && echo "$p"; done; done; }
+roots=""
+for f in /etc/nginx/sites-enabled/*; do
+  echo "== nginx $f"
+  l1=$(expand "$f"); l2=$([ -n "$l1" ] && expand $l1)
+  files=$(printf '%s\n' "$f" $l1 $l2 | sort -u)
+  for x in $files; do
+    out=$(grep -hE '^\s*(listen|server_name|root|autoindex|auth_basic|return)\b' "$x" | sed 's/^\s*//' | sort -u | tr '\n' ' ')
+    [ -n "$out" ] && echo "${x#/etc/nginx/}: $out"
+  done
+  echo "dotfile deny rule files: $(grep -lE 'location ~ /\\\.\(\?!well-known\)' $files | wc -l)"
+  for r in $(grep -hE '^\s*root\s' $files | awk '{print $2}' | tr -d ';' | sort -u); do
+    if [ -d "$r" ]; then echo "root exists: $r"; roots="$roots $r"; else echo "ROOT MISSING: $r"; fi
+  done
+done
+echo "== directories in $HOME"
+ls -d "$HOME"/*/ 2>/dev/null
+for r in $(echo $roots | tr ' ' '\n' | sort -u); do
+  app=${r%/public}
+  echo "== site $app"
+  if [ -f "$app/artisan" ]; then
+    (cd "$app" && php artisan --version 2>&1)
+    (cd "$app" && php artisan about --only=environment,cache 2>&1) | grep -E '(Environment|Debug Mode|URL|Maintenance Mode|Config) \.+ \S|ERROR|not defined'
+  else
+    echo "no artisan"
+  fi
+  echo "-- web root files"
+  find -H "$r" -maxdepth 3 \( -name node_modules -o -name vendor \) -prune -o \( -name '*.sql' -o -name '*.sql.gz' -o -name '*.zip' -o -name '*.tar*' -o -name '*.bak' -o -name '*.log' -o -name '.env*' -o -name .git -o -name phpinfo.php -o -name info.php -o -name 'adminer*.php' -o -name composer.json -o -name package.json \) -print 2>&1
+  if [ -f "$app/config/statamic/cp.php" ]; then
+    echo "-- statamic $(grep -A1 '"name": "statamic/cms"' "$app/composer.lock" 2>/dev/null | grep -oE '"version": "[^"]+"')"
+    grep -hE "^    '(enabled|route)'\s*=>" "$app/config/statamic/cp.php"
+    grep -hE "^\s*'two_factor_(enabled|enforced_roles)'\s*=>" "$app/config/statamic/users.php" || echo "two_factor keys: none"
+    if [ -d "$app/users" ]; then
+      echo "users: $(ls "$app"/users/*.yaml 2>/dev/null | wc -l), 2FA confirmed: $(grep -l '^two_factor_confirmed_at:' "$app"/users/*.yaml 2>/dev/null | wc -l)"
+    else
+      echo "users: not flat files"
+    fi
+  fi
+done
+```
+
 ## Severity
 
 - 🔴 **Act now:** `.env`, `.git` or a log served over HTTP; a database dump, `phpinfo` or Adminer in a web root; debug mode on a live site; SSH password authentication effective; firewall inactive; a database, Redis or Memcached reachable publicly.
 - 🟡 **Fix soon:** an SSH key nobody recognises; a service listening publicly but firewalled; directory listing; dotfile deny rule missing; Statamic CP reachable with 2FA not enforced; site directories the user confirms are stale; enabled configs whose root is missing; `APP_ENV` not `production` on a live hostname; a non-production PHP site without basic auth; catch-all serving a site.
 - 🟢 **Fine:** checked and matches the baseline.
-- ⏳ **Pending root:** waiting on section D output.
+- ⏳ **Pending root:** waiting on section D output (or, in remote mode, section E).
 - ⚪ **Unknown:** could not be determined; say why.
 
 ## Output
@@ -108,8 +187,12 @@ Tight and scannable. Lead with what matters.
 2. **🔴 Act now**, most urgent first. If empty, say so plainly.
 3. **Server table** (server mode): `Check | Finding | Status`.
 4. **Per-site table**: `Site | Leaks | Debug/env | Basic auth | Web root files | Listing | CP / 2FA`.
-5. **⏳ Pending root**: what the root script will settle, and the script itself if not yet run.
+5. **⏳ Pending root**: what the root script (and in remote mode the inside script) will settle, and the scripts themselves if not yet run.
 6. **Caveats**: what could not be checked and why. Requests from the server to its own hostnames may bypass a cloud firewall and a CDN, so outside results from the box are indicative; re-run in outside mode from another machine to confirm a borderline finding.
+
+In remote mode, say where each part came from: outside checks from which machine, inside and root checks from which script and user.
+
+If the project's instructions say where audit results are kept (for example a file per server), record the finished result there.
 
 Just flag. No remediation steps unless asked, other than the 2FA fix below; the user decides what to do.
 
