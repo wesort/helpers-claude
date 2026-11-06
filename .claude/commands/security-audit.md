@@ -31,7 +31,7 @@ The baseline is a server provisioned by Laravel Forge (or similar) running small
 
 1. **Hostnames.** If the Forge CLI is available: `forge server:current`, then `forge server:switch <name>` if needed (say which org and server it is now on), then `forge site:list`. That lists each site's primary domain only, not its aliases. Without the CLI, ask the user for the hostnames.
 2. **Outside checks.** Run section C from here against those hostnames, with the catch-all check (C15) against the IP given or shown by `forge server:list`.
-3. **Inside and root checks.** Print sections E and D and ask the user to run them on the server, for example as Laravel Forge recipes: E as the site user (`forge`), D as `root`. Running E as root would audit root's home instead, and artisan run as root can leave root-owned files in a site's `storage/`. Mark the results they settle ⏳ pending.
+3. **Inside and root checks.** Give the user sections E and D, following [Handing scripts to the user](#handing-scripts-to-the-user): E as the site user (`forge`), D as `root`. Running E as root would audit root's home instead, and artisan run as root can leave root-owned files in a site's `storage/`. Mark the results they settle ⏳ pending.
 4. **When the output arrives,** fill in sections A and B from it, then run section C against any `server_name` in E's output not yet probed (aliases, `www.` hosts).
 
 ## A. Server, inside (server mode; remote mode reads it from section E)
@@ -85,7 +85,7 @@ grep -cE '<signature>' <tmpfile>
 
 ## D. Root script (server and remote modes)
 
-Some checks need root. Do not run them. Print this script exactly, ask the user to run it as root (for example as a Laravel Forge recipe with user `root`), and to paste the output back: the Forge CLI has no recipe commands, so you cannot fetch it yourself. Explain that it is read-only and prints no secrets: fingerprints, settings and port owners only. When the output arrives, complete the pending verdicts; until then mark them ⏳ pending root. If the user already has this as a recipe, they only need to run it.
+Some checks need root. Do not run them. Give the user this script, following [Handing scripts to the user](#handing-scripts-to-the-user), to run as root and paste the output back: the Forge CLI has no recipe commands, so you cannot fetch it yourself. Explain that it is read-only and prints no secrets: fingerprints, settings and port owners only. When the output arrives, complete the pending verdicts; until then mark them ⏳ pending root. If the user already has this as a recipe, they only need to run it.
 
 ```bash
 #!/bin/bash
@@ -170,6 +170,15 @@ for r in $(echo $roots | tr ' ' '\n' | sort -u); do
   fi
 done
 ```
+
+## Handing scripts to the user
+
+Scripts for another server (or for root) are run by the user, never by Claude. Ask once per audit which way they want to run them, then give every script in that form:
+
+- **Forge recipe.** Print the script as it stands and say which user the recipe runs as (the site user, usually `forge`, or `root`). A recipe that still shows as running after a couple of minutes has usually died part-way: ask the user to look at the newest `~/.forge/provision-*.output` on the server (and `ps -u forge` for a live process). If it died, re-run that part over SSH.
+- **Over SSH.** Print the script wrapped in `bash <<'EOF' 2>&1` and `EOF`, so it runs in its own shell and an `exit` cannot close the session. For a root script, wrap it in `sudo bash <<'EOF' 2>&1` instead (sudo asks for the password once). Terminals can mangle a long paste: syntax errors or garbled lines in the output mean nothing after them ran, so give the rest again in smaller pieces.
+
+Keep every handover script short (about 30 lines at most) and split longer work into parts that each end with `== end`, so a part that stops early is obvious.
 
 ## Severity
 
